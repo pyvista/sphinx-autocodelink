@@ -1,0 +1,8 @@
+.DS_Store
+.coverage
+.idea/
+.venv/
+*.egg-info/
+__pycache__/
+sphinx_autocodelink/_version.py
+uv.lock

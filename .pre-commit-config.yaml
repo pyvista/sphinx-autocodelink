@@ -1,0 +1,38 @@
+ci:
+  autoupdate_commit_msg: 'chore: update pre-commit hooks'
+  autofix_prs: true
+  autoupdate_schedule: quarterly
+
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: check-merge-conflict
+  - id: debug-statements
+  - id: no-commit-to-branch
+    args: [--branch, main]
+
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.16.0
+  hooks:
+  - id: ruff-check
+    args: [--fix, --show-fixes]
+  - id: ruff-format
+
+- repo: https://github.com/zizmorcore/zizmor-pre-commit
+  rev: v1.11.0
+  hooks:
+  - id: zizmor
+
+- repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+  rev: v2.15.0
+  hooks:
+  - id: pretty-format-yaml
+    args: [--autofix, --indent, '2']
+
+- repo: https://github.com/ComPWA/taplo-pre-commit
+  rev: v0.9.3
+  hooks:
+  - id: taplo-format
+      # See options: https://taplo.tamasfe.dev/configuration/formatter-options.html
+    args: [--option, reorder_arrays=true, --option, reorder_keys=true, --option, align_comments=false]

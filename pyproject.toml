@@ -1,0 +1,104 @@
+[build-system]
+build-backend = 'setuptools.build_meta'
+requires = ['setuptools>=64', 'setuptools_scm>=8']
+
+[dependency-groups]
+dev = ['pre-commit', 'pytest', 'pytest-cov', 'sphinx']
+
+[project]
+authors = [{ name = 'The PyVista Developers', email = 'info@pyvista.org' }]
+classifiers = [
+  'Development Status :: 3 - Alpha',
+  'Framework :: Sphinx :: Extension',
+  'Intended Audience :: Developers',
+  'Operating System :: MacOS',
+  'Operating System :: Microsoft :: Windows',
+  'Operating System :: POSIX :: Linux',
+  'Programming Language :: Python :: 3',
+  'Programming Language :: Python :: 3.10',
+  'Programming Language :: Python :: 3.11',
+  'Programming Language :: Python :: 3.12',
+  'Programming Language :: Python :: 3.13',
+  'Programming Language :: Python :: 3.14',
+  'Topic :: Documentation :: Sphinx',
+  'Topic :: Software Development :: Documentation',
+]
+dependencies = ['sphinx>=7']
+description = 'Automatically add links to code blocks in Sphinx documentation.'
+dynamic = ['version']
+keywords = ['documentation', 'sphinx']
+license = 'MIT'
+name = 'sphinx-autocodelink'
+readme = 'README.md'
+requires-python = '>=3.10'
+
+[project.urls]
+Homepage = 'https://github.com/user27182/sphinx-autocodelink'
+
+[tool.coverage.run]
+branch = true
+omit = ['*/_version.py']
+parallel = true
+patch = ['subprocess']
+source = ['sphinx_autocodelink']
+
+[tool.pytest.ini_options]
+addopts = '--cov=sphinx_autocodelink --cov-fail-under=95'
+testpaths = 'tests'
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+quote-style = 'single'
+
+[tool.ruff.lint]
+extend-select = [
+  'A',
+  'B',
+  'C4',
+  'D',
+  'E',
+  'EM',
+  'F',
+  'FA',
+  'I',
+  'ICN',
+  'N',
+  'PERF',
+  'PGH',
+  'PIE',
+  'PT',
+  'RET',
+  'RSE',
+  'RUF',
+  'SIM',
+  'T10',
+  'T20',
+  'TCH',
+  'TID',
+  'UP',
+  'W',
+  'YTT',
+]
+ignore = ['D203', 'D211', 'D213']
+[tool.ruff.lint.per-file-ignores]
+'*/conf.py' = ['E402']
+'tests/*' = ['D103']
+# sphinx-gallery example scripts: the module docstring is an RST page title
+# (title line + underline), not prose -- pydocstyle's summary-line rules don't apply.
+'tests/tinypages/gallery_src/*' = ['D205', 'D400', 'D415', 'T201']
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-single-line = true
+force-sort-within-sections = true
+required-imports = ['from __future__ import annotations']
+
+[tool.setuptools]
+license-files = ['LICENSE']
+packages = ['sphinx_autocodelink']
+
+[tool.setuptools_scm]
+version_scheme = 'release-branch-semver'
+write_to = 'sphinx_autocodelink/_version.py'

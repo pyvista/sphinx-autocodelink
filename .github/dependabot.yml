@@ -1,0 +1,16 @@
+version: 2
+updates:
+- package-ecosystem: pip
+  directory: /
+  schedule:
+    interval: weekly
+  labels: [maintenance, dependencies]
+  open-pull-requests-limit: 20
+- package-ecosystem: github-actions
+  directory: /.github/workflows
+  schedule:
+    interval: weekly
+  labels: [maintenance, dependencies]
+  groups:
+    artifacts:
+      patterns: [actions/upload-artifact, actions/download-artifact]
