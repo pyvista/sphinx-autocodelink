@@ -152,6 +152,10 @@ autocodelink_category_labels = {
 }
 ```
 
+**Long lists.** Each rendered list (a whole flat list, or one category's group) shows at most 8
+entries; past that it shows the first 5 and tucks the rest behind a `<details>` "N more" toggle, so
+a heavily-used name's index entry doesn't turn into a wall of links.
+
 ### Resolving identifiers local to a helper function
 
 Only a script's top-level namespace is resolvable by default -- a root identifier that only ever

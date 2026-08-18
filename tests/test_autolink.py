@@ -515,6 +515,25 @@ def test_resolve_link_external():
     assert resolved == ('external.thing', 'https://example.invalid/thing.html')
 
 
+def test_render_ref_list_shows_all_entries_at_or_under_the_threshold():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD)]
+    html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
+    assert html.count('<li>') == autolink._COLLAPSE_THRESHOLD
+    assert '<details' not in html
+
+
+def test_render_ref_list_collapses_past_the_threshold():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
+    html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
+    assert html.count('<li>') == autolink._COLLAPSE_THRESHOLD + 1
+    hidden = autolink._COLLAPSE_THRESHOLD + 1 - autolink._COLLAPSE_VISIBLE
+    assert f'<summary>{hidden} more</summary>' in html
+    before_details = html.split('<details', 1)[0]
+    assert before_details.count('<li>') == autolink._COLLAPSE_VISIBLE
+
+
 def test_embed_links_skips_on_exception():
     app = SimpleNamespace(builder=SimpleNamespace(format='html'))
     assert autolink._embed_links(app, Exception('build failed')) is None

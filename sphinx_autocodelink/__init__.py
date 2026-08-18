@@ -689,14 +689,36 @@ def _docname_title(app: Sphinx, docname: str) -> str:
     return title_node.astext() if title_node is not None else docname
 
 
+_COLLAPSE_THRESHOLD = 8
+_COLLAPSE_VISIBLE = 5
+
+
 def _render_ref_list(refs: list[str], *, docname: str, app: Sphinx, show_titles: bool) -> str:
-    """Render one ``<ul>`` of links to ``refs``, relative to ``docname``, sorted by display text."""
+    """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``, sorted by display text.
+
+    Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
+    with the rest tucked behind a ``<details>`` toggle.
+    """
     labeled = sorted((_docname_title(app, ref) if show_titles else ref, ref) for ref in refs)
-    items = ''.join(
-        f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(label)}</a></li>'
-        for label, ref in labeled
+
+    def render(entries: list[tuple[str, str]]) -> str:
+        """Render a sequence of (label, ref) pairs as ``<li>`` entries."""
+        return ''.join(
+            f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(label)}</a></li>'
+            for label, ref in entries
+        )
+
+    if len(labeled) <= _COLLAPSE_THRESHOLD:
+        return f'<ul class="sphinx-autocodelink-index">{render(labeled)}</ul>'
+
+    visible, hidden = labeled[:_COLLAPSE_VISIBLE], labeled[_COLLAPSE_VISIBLE:]
+    return (
+        f'<ul class="sphinx-autocodelink-index">{render(visible)}</ul>'
+        '<details class="sphinx-autocodelink-index-more">'
+        f'<summary>{len(hidden)} more</summary>'
+        f'<ul class="sphinx-autocodelink-index">{render(hidden)}</ul>'
+        '</details>'
     )
-    return f'<ul class="sphinx-autocodelink-index">{items}</ul>'
 
 
 def _render_grouped_refs(
