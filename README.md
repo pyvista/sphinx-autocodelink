@@ -123,8 +123,20 @@ an optional `category=`/`:category:` of your own choosing. `.. autocodelink-inde
 group referencing pages -- but only adaptively: `:group: auto` (the default) groups by category only
 when a given entry's references actually span more than one category, otherwise it's today's flat
 list either way, so a name referenced from just one place never gets a pointless one-item subheading.
-Force it with `:group: always` or `:group: never`. Untagged pages fall under a generic "Other" bucket
-whenever grouping does happen.
+Force it with `:group: always` or `:group: never`. Untagged pages fall under a generic
+`'Documentation'` bucket whenever grouping does happen.
+
+Set `autocodelink_category_labels` to rename categories' *displayed* group headings, without
+changing the category strings themselves (what `:group:` actually groups by) -- e.g. to drop
+implementation detail your readers don't need ("Sphinx Gallery" is a mechanism, not something
+a reader needs to know about):
+
+```python
+autocodelink_category_labels = {
+    'Sphinx Gallery': 'Gallery Examples',
+    'Documentation': 'API Reference',
+}
+```
 
 ### Resolving identifiers local to a helper function
 
