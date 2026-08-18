@@ -62,10 +62,7 @@ records to disk instead, so they survive regardless.
 Only resolves identifiers in an example's own top-level (module) scope -- a root identifier that
 only ever exists inside one of the example's own helper functions isn't resolvable here (unlike the
 standalone `.. autocodelink::` directive; see [Resolving identifiers local to a helper
-function](#resolving-identifiers-local-to-a-helper-function)). An earlier version of
-`AutoCodeLinkScraper` traced Sphinx-Gallery's own example execution to resolve those too, but tracing
-every function call across every example, on every parallel worker, for the whole gallery build
-turned out to be a real stability risk relative to the benefit -- removed.
+function](#resolving-identifiers-local-to-a-helper-function)).
 
 If `sphinx_gallery_conf['reference_url']` is also configured for a module `AutoCodeLinkScraper`
 covers too, both will try to link the same identifiers. This extension runs its own embedding after
@@ -102,8 +99,7 @@ included, when there's nothing to show, instead of printing "No references found
 ```
 
 Referencing pages show their real title by default (read straight from Sphinx's own tracked
-document titles, so it never drifts from what the page actually says), not their docname. Add
-`:no-titles:` to show docnames instead.
+document titles), not their docname. Add `:no-titles:` to show docnames instead.
 
 Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used in"
 section -- to every autodoc-documented object's own docstring automatically, via

@@ -86,9 +86,8 @@ class AutoCodeLinkIndex(Directive):
         flat list either way.
 
     :no-titles: shows each referencing page's own docname instead of its
-        title. Titles are on by default: they're read straight from
-        Sphinx's own tracked document titles, so there's no extra cost
-        and no risk of drifting from what the page actually says.
+        title. Titles are on by default, read straight from Sphinx's own
+        tracked document titles.
     """
 
     has_content = False

@@ -312,31 +312,19 @@ def exec_with_local_scopes(
 ) -> dict[str, Any]:
     """Execute ``code`` in ``namespace``, and return every local scope seen merged in.
 
-    A root identifier used only inside the script's own helper functions never
-    reaches its top-level namespace, so a plain ``exec()`` can't resolve it for
-    :func:`record_namespace` -- there's nothing to look the name up against.
-    This traces the execution and captures every one of the script's own
-    function calls' own locals too, merging them in underneath ``namespace``
-    (which still wins on name conflicts). Only frames compiled from
-    ``filename`` are captured; calls into library internals are not traced or
-    merged in, both to avoid false matches from unrelated same-named locals
-    deep in a dependency and to keep the tracing overhead down.
-
-    The cost of the wider net: a local name bound in one of the script's own
-    calls can still shadow what globals (or a *different* call) bound under
-    the same name, since everything captured is merged into one flat
-    namespace rather than kept scope-by-scope.
+    Traces the execution and captures every one of the script's own function
+    calls' own locals, merging them in underneath ``namespace`` (which still
+    wins on name conflicts). Only frames compiled from ``filename`` are
+    captured. A local name bound in one of the script's own calls can shadow
+    what globals (or a *different* call) bound under the same name, since
+    everything captured is merged into one flat namespace rather than kept
+    scope-by-scope.
 
     ``code`` is executed in ``namespace`` exactly as a plain ``exec(code,
     namespace)`` would -- ``namespace`` itself is unaffected by the tracing,
     only the returned dict differs.
 
-    Uses ``sys.setprofile()`` rather than ``sys.settrace()``: profile and
-    trace are separate hook slots in CPython, so this can't collide with a
-    coverage tool or debugger's own tracer (``sys.settrace()`` only supports
-    one tracer at a time pre-3.12/:pep:`669`, and a coverage tool's C tracer
-    can silently hijack the global trace function back to itself the moment
-    it's invoked out-of-band, breaking both sides).
+    Uses ``sys.setprofile()`` rather than ``sys.settrace()``.
     """
     captured: dict[str, Any] = {}
     old_profile = sys.getprofile()
