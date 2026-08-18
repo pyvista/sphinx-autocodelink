@@ -11,3 +11,14 @@ def thing() -> int:
 def unused() -> int:
     """Return a constant. Never referenced by any example -- for the empty-backrefs case."""
     return 2
+
+
+def documented_example() -> int:
+    """Return a constant.
+
+    .. autocodelink::
+
+        import pkg
+        pkg.thing()
+    """
+    return 3

@@ -52,6 +52,7 @@ class AutoCodeLink(Directive):
             source=code,
             namespace=namespace,
             category=self.options.get('category', ''),
+            state=self.state,
         )
 
         node = nodes.literal_block(source, source)

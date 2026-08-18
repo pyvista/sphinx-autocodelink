@@ -133,7 +133,12 @@ group referencing pages -- but only adaptively: `:group: auto` (the default) gro
 when a given entry's references actually span more than one category, otherwise it's today's flat
 list either way, so a name referenced from just one place never gets a pointless one-item subheading.
 Force it with `:group: always` or `:group: never`. Untagged pages fall under a generic
-`'Documentation'` bucket whenever grouping does happen.
+`'Documentation'` bucket whenever grouping does happen -- unless the recording happens from inside
+an object's own description (e.g. a docstring's Examples section, rendered through `autodoc` or a
+domain directive like `.. py:function::`), in which case it's tagged `'Docstring Examples'` instead.
+Detected automatically when `record_namespace()`/`.. autocodelink::` are given the calling
+directive's own `state`; not available to `AutoCodeLinkScraper`, since Sphinx-Gallery examples don't
+run inside any object's own description in the first place.
 
 Set `autocodelink_category_labels` to rename categories' *displayed* group headings, without
 changing the category strings themselves (what `:group:` actually groups by) -- e.g. to drop
@@ -172,12 +177,14 @@ A consumer that already executes example code for its own purposes (e.g. to rend
 skip the directive and `AutoCodeLinkScraper` entirely, and call `record_namespace()` directly with
 the resulting namespace. For example, [pyvista's `pyvista-plot` directive](https://github.com/pyvista/pyvista/blob/main/pyvista/ext/plot_directive.py)
 already builds its own namespace via `exec(code, ns)` to render a figure; adding autolinking is one
-extra call after that:
+extra call after that. Passing the directive's own `state` (see "Grouping by category" above) picks
+up the `'Docstring Examples'` category automatically, when the consumer's own directive is itself
+used inside an object's own description:
 
 ```python
 from sphinx_autocodelink import record_namespace
 
-record_namespace(env=env, docname=env.docname, source=code, namespace=ns)
+record_namespace(env=env, docname=env.docname, source=code, namespace=ns, state=self.state)
 ```
 
 Then, from the consumer's own `setup(app)`, call `app.setup_extension('sphinx_autocodelink')`:

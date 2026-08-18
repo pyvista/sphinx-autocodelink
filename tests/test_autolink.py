@@ -320,6 +320,50 @@ def test_record_namespace():
     ]
 
 
+def test_is_inside_autodoc_desc_true_when_object_is_set():
+    state = SimpleNamespace(
+        document=SimpleNamespace(
+            settings=SimpleNamespace(env=SimpleNamespace(temp_data={'object': 'pkg.thing'}))
+        )
+    )
+    assert autolink.is_inside_autodoc_desc(state) is True
+
+
+def test_is_inside_autodoc_desc_false_when_object_is_empty():
+    state = SimpleNamespace(
+        document=SimpleNamespace(
+            settings=SimpleNamespace(env=SimpleNamespace(temp_data={'object': ''}))
+        )
+    )
+    assert autolink.is_inside_autodoc_desc(state) is False
+
+
+def test_record_namespace_state_sets_docstring_example_category_when_unset():
+    env = SimpleNamespace()
+    state = SimpleNamespace(
+        document=SimpleNamespace(
+            settings=SimpleNamespace(env=SimpleNamespace(temp_data={'object': 'pkg.thing'}))
+        )
+    )
+    autolink.record_namespace(env=env, docname='api', source='x', namespace={'x': 1}, state=state)
+    assert (
+        getattr(env, autolink._CATEGORY_ATTR)['api'] == autolink.DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
+    )
+
+
+def test_record_namespace_state_does_not_override_explicit_category():
+    env = SimpleNamespace()
+    state = SimpleNamespace(
+        document=SimpleNamespace(
+            settings=SimpleNamespace(env=SimpleNamespace(temp_data={'object': 'pkg.thing'}))
+        )
+    )
+    autolink.record_namespace(
+        env=env, docname='api', source='x', namespace={'x': 1}, category='Tutorials', state=state
+    )
+    assert getattr(env, autolink._CATEGORY_ATTR)['api'] == 'Tutorials'
+
+
 def test_record_namespace_to_disk_no_records(tmp_path):
     autolink.record_namespace_to_disk(
         directory=tmp_path, docname='index', source='x = 1', namespace={}

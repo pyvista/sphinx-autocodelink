@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import CodeType
 
+    from docutils.parsers.rst.states import RSTState
     from sphinx.application import Sphinx
     from sphinx.environment import BuildEnvironment
 
@@ -346,6 +347,21 @@ def exec_with_local_scopes(
     return merged
 
 
+#: Suggested category (see :func:`record_namespace`) for code recorded from inside an
+#: autodoc-documented object's own docstring (e.g. its Examples section), as opposed to a
+#: hand-written page. Applied automatically when ``state`` is passed and no ``category`` is.
+DEFAULT_DOCSTRING_EXAMPLE_CATEGORY = 'Docstring Examples'
+
+
+def is_inside_autodoc_desc(state: RSTState) -> bool:
+    """Return whether ``state``'s directive is nested inside an object description.
+
+    ``state`` is a directive's own ``self.state``, from anywhere in
+    ``docutils.parsers.rst.Directive.run()``.
+    """
+    return bool(state.document.settings.env.temp_data.get('object'))
+
+
 def record_namespace(
     *,
     env: BuildEnvironment,
@@ -353,13 +369,21 @@ def record_namespace(
     source: str,
     namespace: dict[str, Any],
     category: str = '',
+    state: RSTState | None = None,
 ) -> None:
     """Record candidate documented names for every identifier in ``source``.
 
     ``category`` optionally tags where this recording came from (e.g. ``'Sphinx
     Gallery'``), for grouping in ``.. autocodelink-index::`` output. Untagged pages
     display under a generic "Documentation" bucket when grouped.
+
+    ``state`` (the calling directive's own ``self.state``) sets ``category`` to
+    :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` when it isn't already set and
+    :func:`is_inside_autodoc_desc` is true for it.
     """
+    if not category and state is not None and is_inside_autodoc_desc(state):
+        category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
+
     all_records: dict[str, list[_Candidate | _CallCandidate]] | None = getattr(env, _ENV_ATTR, None)
     if all_records is None:
         all_records = {}
@@ -666,11 +690,11 @@ def _docname_title(app: Sphinx, docname: str) -> str:
 
 
 def _render_ref_list(refs: list[str], *, docname: str, app: Sphinx, show_titles: bool) -> str:
-    """Render one ``<ul>`` of links to ``refs``, relative to ``docname``."""
+    """Render one ``<ul>`` of links to ``refs``, relative to ``docname``, sorted by display text."""
+    labeled = sorted((_docname_title(app, ref) if show_titles else ref, ref) for ref in refs)
     items = ''.join(
-        f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">'
-        f'{escape(_docname_title(app, ref) if show_titles else ref)}</a></li>'
-        for ref in refs
+        f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(label)}</a></li>'
+        for label, ref in labeled
     )
     return f'<ul class="sphinx-autocodelink-index">{items}</ul>'
 

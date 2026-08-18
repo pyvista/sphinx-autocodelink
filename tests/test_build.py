@@ -74,10 +74,11 @@ def test_autocodelink_index(tmp_path):
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in dl
 
-    # default grouping (2 categories apply to pkg.thing: 'Documentation' for the
-    # directive-recorded index page, 'Sphinx Gallery' for the scraper-recorded examples)
-    # -- and titles, not docnames, by default.
-    grouped = _block_after(refs, 'since 2 categories apply):')
+    # default grouping (3 categories apply to pkg.thing: 'Documentation' for the
+    # directive-recorded index page, 'Sphinx Gallery' for the scraper-recorded examples,
+    # 'Docstring Examples' for pkg.documented_example's own docstring) -- and titles, not
+    # docnames, by default.
+    grouped = _block_after(refs, 'since 3 categories apply):')
     groups = dict(
         re.findall(
             r'<div class="sphinx-autocodelink-index-group">'
@@ -87,7 +88,7 @@ def test_autocodelink_index(tmp_path):
             re.DOTALL,
         )
     )
-    assert set(groups) == {'Documentation', 'Sphinx Gallery'}
+    assert set(groups) == {'Documentation', 'Sphinx Gallery', 'Docstring Examples'}
     assert '<a href="index.html">Index</a>' in groups['Documentation']
     assert (
         '<a href="auto_examples/plot_thing.html">Plotting a thing</a>' in groups['Sphinx Gallery']
@@ -96,9 +97,10 @@ def test_autocodelink_index(tmp_path):
         '<a href="auto_examples/plot_other.html">Plotting another thing</a>'
         in groups['Sphinx Gallery']
     )
+    assert '<a href="api.html">API</a>' in groups['Docstring Examples']
 
-    # :group: never forces one flat list despite the same 2 categories applying.
-    forced_flat = _block_after(refs, 'forced flat despite 2 categories applying:')
+    # :group: never forces one flat list despite the same 3 categories applying.
+    forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
     assert 'sphinx-autocodelink-index-group' not in forced_flat
     assert '<a href="index.html">Index</a>' in forced_flat
     assert '<a href="auto_examples/plot_thing.html">Plotting a thing</a>' in forced_flat
@@ -114,7 +116,7 @@ def test_autocodelink_index(tmp_path):
 
 def test_autocodelink_category_labels_renames_group_headings(tmp_path):
     # renames the *display* label only -- grouping itself still goes by the real,
-    # unrenamed category, so this must still land the exact same 2 groups as the
+    # unrenamed category, so this must still land the exact same 3 groups as the
     # default-labels case above.
     outdir, _ = _build(
         tmp_path,
@@ -122,13 +124,14 @@ def test_autocodelink_category_labels_renames_group_headings(tmp_path):
             'autocodelink_category_labels': {
                 'Sphinx Gallery': 'Gallery Examples',
                 'Documentation': 'API Docs',
+                'Docstring Examples': 'API Examples',
             }
         },
     )
     refs = (outdir / 'refs.html').read_text()
-    grouped = _block_after(refs, 'since 2 categories apply):')
+    grouped = _block_after(refs, 'since 3 categories apply):')
     labels = re.findall(r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>', grouped)
-    assert set(labels) == {'Gallery Examples', 'API Docs'}
+    assert set(labels) == {'Gallery Examples', 'API Docs', 'API Examples'}
 
 
 def test_autodoc_backrefs(tmp_path):
