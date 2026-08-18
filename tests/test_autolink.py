@@ -346,8 +346,8 @@ def test_setup():
 
     class FakeApp:
         def connect(self, event, handler, priority=500):
-            connected[event] = handler
-            priorities[event] = priority
+            connected.setdefault(event, []).append(handler)
+            priorities[(event, handler)] = priority
 
         def add_config_value(self, name, default, rebuild):
             config_values[name] = (default, rebuild)
@@ -357,15 +357,18 @@ def test_setup():
 
     result = autolink.setup(FakeApp())
     assert connected == {
-        'builder-inited': autolink._clear_disk_records,
-        'env-merge-info': autolink._merge_records,
-        'env-purge-doc': autolink._purge_doc,
-        'build-finished': autolink._embed_links,
+        'builder-inited': [autolink._clear_disk_records, autolink._register_autodoc_hook],
+        'env-merge-info': [autolink._merge_records],
+        'env-purge-doc': [autolink._purge_doc],
+        'build-finished': [autolink._embed_links],
     }
     # runs after other build-finished handlers at Sphinx's default priority (500) -- see
     # setup()'s docstring for why (Sphinx-Gallery's reference_url embedding, notably).
-    assert priorities['build-finished'] == 900
-    assert config_values == {'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html')}
+    assert priorities[('build-finished', autolink._embed_links)] == 900
+    assert config_values == {
+        'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
+        'autocodelink_autodoc_backrefs': (False, 'html'),
+    }
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}
 
@@ -658,3 +661,65 @@ def test_embed_links_name_already_linked(tmp_path):
     app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     assert out_file.read_text() == html
+
+
+def test_render_full_index_empty():
+    assert autolink._render_full_index({}, docname='index', app=None, local={}, external={}) == ''
+
+
+def test_inject_backref_index_skips_module():
+    lines = []
+    autolink._inject_backref_index(None, 'module', 'pkg', None, {}, lines)
+    assert lines == []
+
+
+def test_inject_backref_index_appends_directive():
+    lines = ['existing docstring line']
+    autolink._inject_backref_index(None, 'function', 'pkg.thing', None, {}, lines)
+    assert lines[-3:] == [
+        '.. autocodelink-index:: pkg.thing',
+        '   :label: Used in',
+        '   :hide-empty:',
+    ]
+
+
+def test_register_autodoc_hook_disabled_by_default():
+    connected = {}
+
+    class FakeApp:
+        config = SimpleNamespace(autocodelink_autodoc_backrefs=False)
+        events = SimpleNamespace(events={'autodoc-process-docstring': ''})
+
+        def connect(self, event, handler):
+            connected[event] = handler
+
+    autolink._register_autodoc_hook(FakeApp())
+    assert connected == {}
+
+
+def test_register_autodoc_hook_skips_when_autodoc_unavailable():
+    connected = {}
+
+    class FakeApp:
+        config = SimpleNamespace(autocodelink_autodoc_backrefs=True)
+        events = SimpleNamespace(events={})
+
+        def connect(self, event, handler):
+            connected[event] = handler
+
+    autolink._register_autodoc_hook(FakeApp())
+    assert connected == {}
+
+
+def test_register_autodoc_hook_connects_when_enabled_and_available():
+    connected = {}
+
+    class FakeApp:
+        config = SimpleNamespace(autocodelink_autodoc_backrefs=True)
+        events = SimpleNamespace(events={'autodoc-process-docstring': ''})
+
+        def connect(self, event, handler):
+            connected[event] = handler
+
+    autolink._register_autodoc_hook(FakeApp())
+    assert connected == {'autodoc-process-docstring': autolink._inject_backref_index}

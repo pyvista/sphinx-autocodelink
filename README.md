@@ -82,6 +82,22 @@ Pass a documented dotted name to show just its own references -- handy on that n
 .. autocodelink-index:: pkg.thing
 ```
 
+Add `:label:` to wrap the list in a real section with that title, instead of rendering inline --
+important if anything in your setup (e.g. an "on this page" sidebar built from real headings) needs
+a genuine section rather than inline content. Add `:hide-empty:` to omit the whole section, title
+included, when there's nothing to show, instead of printing "No references found.":
+
+```rst
+.. autocodelink-index:: pkg.thing
+   :label: Used in
+   :hide-empty:
+```
+
+Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used in"
+section -- to every autodoc-documented object's own docstring automatically, via
+``autodoc-process-docstring``. Off by default; requires ``sphinx.ext.autodoc`` (directly, or via
+something that depends on it, e.g. numpydoc).
+
 ### Library use
 
 A consumer that already executes example code for its own purposes (e.g. to render a figure) can

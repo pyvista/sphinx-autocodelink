@@ -1,6 +1,6 @@
 API
 ===
 
-.. py:function:: pkg.thing()
+.. autofunction:: pkg.thing
 
-   A documented thing.
+.. autofunction:: pkg.unused

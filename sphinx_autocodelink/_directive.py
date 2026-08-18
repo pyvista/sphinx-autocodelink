@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import doctest
 from html import escape
+from typing import TYPE_CHECKING
+from typing import ClassVar
 
 from docutils import nodes
 from docutils.parsers.rst import Directive
+from docutils.parsers.rst import directives
 
 from sphinx_autocodelink import _note_index_doc
 from sphinx_autocodelink import record_namespace
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class AutoCodeLink(Directive):
@@ -47,12 +53,23 @@ class AutoCodeLinkIndex(Directive):
     argument -- a documented dotted name, e.g. ``pkg.thing`` -- lists just
     the pages that reference that name. Actually filled in at
     ``build-finished``, once every page's links are known.
+
+    :label: wraps the list in a real section with this title, instead of
+        rendering inline -- so e.g. a Sphinx setup that hoists docstring
+        sections to page level for its own "on this page" navigation picks
+        this one up identically. :hide-empty: then omits the whole
+        section -- title included -- instead of "No references found."
+        when there's nothing to show; only meaningful alongside :label:.
     """
 
     has_content = False
     required_arguments = 0
     optional_arguments = 1
     final_argument_whitespace = False
+    option_spec: ClassVar[dict[str, Callable[[str], object]]] = {
+        'label': directives.unchanged,
+        'hide-empty': directives.flag,
+    }
 
     def run(self) -> list[nodes.Node]:
         """Note this page as hosting an index, and emit its placeholder."""
@@ -60,5 +77,20 @@ class AutoCodeLinkIndex(Directive):
         _note_index_doc(env, env.docname)
 
         name = self.arguments[0] if self.arguments else ''
-        raw = f'<div class="sphinx-autocodelink-index" data-name="{escape(name)}"></div>'
-        return [nodes.raw('', raw, format='html')]
+        hide_empty = 'hide-empty' in self.options
+        raw = (
+            f'<div class="sphinx-autocodelink-index" data-name="{escape(name)}" '
+            f'data-hide-empty="{"1" if hide_empty else ""}"></div>'
+        )
+        placeholder = nodes.raw('', raw, format='html')
+
+        label = self.options.get('label', '')
+        if not label:
+            return [placeholder]
+
+        section = nodes.section(classes=['sphinx-autocodelink-backrefs'])
+        section['ids'] = [nodes.make_id(f'autocodelink-backrefs-{name or "index"}')]
+        section += nodes.title(label, label)
+        section += placeholder
+        self.state.document.note_implicit_target(section, section)
+        return [section]

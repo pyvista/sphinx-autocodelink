@@ -62,3 +62,22 @@ def test_autocodelink_index(tmp_path):
 
     # filtered index for a name with no references.
     assert 'No references found.' in refs
+
+
+def test_autodoc_backrefs(tmp_path):
+    outdir, _ = _build(tmp_path)
+    api = (outdir / 'api.html').read_text()
+
+    # pkg.thing is referenced elsewhere: a real, hoistable section, not just a raw block.
+    section = re.search(
+        r'<section class="sphinx-autocodelink-backrefs"[^>]*>.*?</section>', api, re.DOTALL
+    )
+    assert section is not None
+    assert '<h2>Used in' in section.group()
+    for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
+        assert f'href="{page}"' in section.group()
+
+    # pkg.unused has no references: nothing appended at all, not even "No references found."
+    unused_dd = re.search(r'id="pkg\.unused">.*?</dd>', api, re.DOTALL).group()
+    assert 'sphinx-autocodelink-backrefs' not in unused_dd
+    assert 'No references found' not in unused_dd

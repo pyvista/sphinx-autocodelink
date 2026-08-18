@@ -535,7 +535,16 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
 
 #: Matches one ``.. autocodelink-index::`` placeholder, ``data-name`` empty for the full index.
 _INDEX_PLACEHOLDER_RE = re.compile(
-    r'<div class="sphinx-autocodelink-index" data-name="([^"]*)"></div>'
+    r'<div class="sphinx-autocodelink-index" data-name="([^"]*)" data-hide-empty="([^"]*)"></div>'
+)
+
+#: Matches a ``:label:``-generated section (title + one placeholder), for the ``:hide-empty:``
+#: case: removed as a whole -- title included -- rather than just its placeholder, so an
+#: auto-injected "Used in" heading never sits over nothing. Assumes no directive nests
+#: another section inside it, which none of ours do.
+_BACKREFS_SECTION_RE = re.compile(
+    r'<section\b[^>]*\bclass="[^"]*sphinx-autocodelink-backrefs[^"]*"[^>]*>.*?</section>',
+    re.DOTALL,
 )
 
 
@@ -576,12 +585,32 @@ def _render_index_html(
     app: Sphinx,
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
+    hide_empty: bool = False,
 ) -> str:
     """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
     if name:
-        rendered = _render_index_entry(name, backrefs, docname=docname, app=app)
-        return rendered or '<p class="sphinx-autocodelink-index-empty">No references found.</p>'
+        body = _render_index_entry(name, backrefs, docname=docname, app=app)
+    else:
+        body = _render_full_index(
+            backrefs, docname=docname, app=app, local=local, external=external
+        )
 
+    if not body:
+        if hide_empty:
+            return ''
+        return '<p class="sphinx-autocodelink-index-empty">No references found.</p>'
+    return body
+
+
+def _render_full_index(
+    backrefs: dict[str, set[str]],
+    *,
+    docname: str,
+    app: Sphinx,
+    local: dict[str, tuple[str, str]],
+    external: dict[str, str],
+) -> str:
+    """Render the site-wide index: every resolved name and its referencing pages."""
     entries = []
     for target in sorted(backrefs):
         refs = sorted(backrefs.get(target, ()))
@@ -597,7 +626,7 @@ def _render_index_html(
         )
         entries.append(f'<dt>{heading}</dt><dd><ul>{items}</ul></dd>')
     if not entries:
-        return '<p class="sphinx-autocodelink-index-empty">No references found.</p>'
+        return ''
     return f'<dl class="sphinx-autocodelink-index">{"".join(entries)}</dl>'
 
 
@@ -610,19 +639,66 @@ def _fill_index_placeholders(
     external: dict[str, str],
 ) -> None:
     """Replace every ``.. autocodelink-index::`` placeholder with its rendered backreferences."""
+
+    def _render_placeholder(match: re.Match[str], docname: str) -> str:
+        name = unescape(match.group(1))
+        hide_empty = match.group(2) == '1'
+        return _render_index_html(
+            name,
+            backrefs,
+            docname=docname,
+            app=app,
+            local=local,
+            external=external,
+            hide_empty=hide_empty,
+        )
+
+    def _render_section(match: re.Match[str], docname: str) -> str:
+        section_html = match.group(0)
+        placeholder = _INDEX_PLACEHOLDER_RE.search(section_html)
+        if placeholder is None:  # defensive: no placeholder inside, leave untouched
+            return section_html
+        rendered = _render_placeholder(placeholder, docname)
+        if not rendered and placeholder.group(2) == '1':
+            return ''  # :hide-empty: and nothing to show -- drop the heading too
+        return section_html[: placeholder.start()] + rendered + section_html[placeholder.end() :]
+
     for docname in index_docs:
         out_file = Path(app.outdir) / app.builder.get_target_uri(docname)
         if not out_file.exists():
             continue
         html = out_file.read_text(encoding='utf-8')
+        # :label: sections first, as one atomic unit; then any plain, unlabeled placeholders.
+        html = _BACKREFS_SECTION_RE.sub(lambda m, d=docname: _render_section(m, d), html)
+        html = _INDEX_PLACEHOLDER_RE.sub(lambda m, d=docname: _render_placeholder(m, d), html)
+        out_file.write_text(html, encoding='utf-8')
 
-        def _replace(match: re.Match[str], docname: str = docname) -> str:
-            name = unescape(match.group(1))
-            return _render_index_html(
-                name, backrefs, docname=docname, app=app, local=local, external=external
-            )
 
-        out_file.write_text(_INDEX_PLACEHOLDER_RE.sub(_replace, html), encoding='utf-8')
+def _inject_backref_index(
+    app: Sphinx, what: str, name: str, obj: Any, options: dict[str, Any], lines: list[str]
+) -> None:
+    """Append a hidden-if-empty backreferences index to every non-module docstring."""
+    if what == 'module':
+        return
+    lines.append('')
+    lines.append(f'.. autocodelink-index:: {name}')
+    lines.append('   :label: Used in')
+    lines.append('   :hide-empty:')
+
+
+def _register_autodoc_hook(app: Sphinx) -> None:
+    """Connect the autodoc backrefs hook once every extension's own events are registered.
+
+    ``builder-inited`` fires after every extension's ``setup()`` has run, so this is the
+    first point ``autodoc-process-docstring`` reliably exists if autodoc is used at all --
+    regardless of whether autodoc (or numpydoc, which depends on it) is listed before or
+    after this extension in ``extensions``.
+    """
+    if not getattr(app.config, 'autocodelink_autodoc_backrefs', False):
+        return
+    if 'autodoc-process-docstring' not in app.events.events:
+        return
+    app.connect('autodoc-process-docstring', _inject_backref_index)
 
 
 #: Default value of the ``autocodelink_records_dir`` config value, and of
@@ -645,6 +721,11 @@ def setup(app: Sphinx) -> dict[str, bool]:
     ``.. autocodelink::`` directive only affects blocks that use it, and
     :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper` only records
     when added to a ``sphinx_gallery_conf['image_scrapers']``.
+
+    ``autocodelink_autodoc_backrefs`` (default ``False``) appends a "Used
+    in" backreferences index to every autodoc-documented object's own
+    docstring, via ``autodoc-process-docstring``. Objects with no
+    references get nothing appended, not an empty "No references found."
     """
     from sphinx_autocodelink._directive import AutoCodeLink
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
@@ -657,7 +738,9 @@ def setup(app: Sphinx) -> dict[str, bool]:
     # for spans already inside an anchor -- running after it lets our own such check
     # (which does) skip whatever it already wrapped, instead of nesting inside it.
     app.connect('build-finished', _embed_links, priority=900)
+    app.connect('builder-inited', _register_autodoc_hook)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
+    app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}
