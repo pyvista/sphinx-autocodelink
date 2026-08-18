@@ -102,10 +102,7 @@ from sphinx_autocodelink import record_namespace
 record_namespace(env=env, docname=env.docname, source=code, namespace=ns)
 ```
 
-Then, from the consumer's own `setup(app)`, depend on this extension with `app.setup_extension(...)`
-rather than calling `sphinx_autocodelink.setup()` directly -- `setup_extension` is a no-op if the
-user's own `conf.py` already lists `sphinx_autocodelink` in `extensions`, so link embedding gets
-wired up exactly once either way:
+Then, from the consumer's own `setup(app)`, call `app.setup_extension('sphinx_autocodelink')`:
 
 ```python
 def setup(app):
