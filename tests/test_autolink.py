@@ -667,6 +667,34 @@ def test_render_full_index_empty():
     assert autolink._render_full_index({}, docname='index', app=None, local={}, external={}) == ''
 
 
+def test_render_index_entry_excludes_self_reference(tmp_path):
+    # a docstring's own Examples section calling the very thing it documents
+    # is not a genuine cross-reference to itself.
+    app = _fake_app(_fake_env(), tmp_path)
+    backrefs = {'pkg.thing': {'pkg.thing', 'other'}}
+    result = autolink._render_index_entry('pkg.thing', backrefs, docname='pkg.thing', app=app)
+    assert 'pkg.thing' not in result
+    assert 'href="other"' in result
+
+
+def test_render_index_entry_self_reference_only_is_empty(tmp_path):
+    app = _fake_app(_fake_env(), tmp_path)
+    backrefs = {'pkg.thing': {'pkg.thing'}}
+    result = autolink._render_index_entry('pkg.thing', backrefs, docname='pkg.thing', app=app)
+    assert result == ''
+
+
+def test_render_full_index_excludes_self_reference(tmp_path):
+    app = _fake_app(_fake_env(), tmp_path)
+    backrefs = {'pkg.thing': {'pkg.thing', 'other'}}
+    result = autolink._render_full_index(
+        backrefs, docname='pkg.thing', app=app, local={}, external={}
+    )
+    # 'pkg.thing' appears once, as the <dt> heading -- not again as a referencing-page link.
+    assert result.count('pkg.thing') == 1
+    assert 'href="other"' in result
+
+
 def test_inject_backref_index_skips_module():
     lines = []
     autolink._inject_backref_index(None, 'module', 'pkg', None, {}, lines)

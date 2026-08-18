@@ -566,8 +566,12 @@ def _index_entry_link(
 def _render_index_entry(
     target: str, backrefs: dict[str, set[str]], *, docname: str, app: Sphinx
 ) -> str:
-    """Render one target name's list of referencing pages, or ``''`` if it has none."""
-    refs = sorted(backrefs.get(target, ()))
+    """Render one target name's list of referencing pages, or ``''`` if it has none.
+
+    Excludes ``docname`` itself: an object's own docstring demonstrating that same
+    object (e.g. its own Examples section calling it) isn't a genuine cross-reference.
+    """
+    refs = sorted(ref for ref in backrefs.get(target, ()) if ref != docname)
     if not refs:
         return ''
     items = ''.join(
@@ -613,7 +617,8 @@ def _render_full_index(
     """Render the site-wide index: every resolved name and its referencing pages."""
     entries = []
     for target in sorted(backrefs):
-        refs = sorted(backrefs.get(target, ()))
+        # Exclude self-references -- see _render_index_entry.
+        refs = sorted(ref for ref in backrefs.get(target, ()) if ref != docname)
         if not refs:
             continue
         link = _index_entry_link(
