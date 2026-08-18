@@ -315,7 +315,7 @@ def test_record_namespace():
     call_candidates = [r for r in records['index'] if isinstance(r, autolink._CallCandidate)]
     assert call_candidates == [
         autolink._CallCandidate(
-            'make_thing', ('method',), ('test_autolink._RecordNamespaceReturnType.method',)
+            'make_thing', ('method',), ('test_autocodelink._RecordNamespaceReturnType.method',)
         )
     ]
 
@@ -387,7 +387,7 @@ def test_record_namespace_to_disk_and_load(tmp_path):
     ]
     assert call_candidates == [
         autolink._CallCandidate(
-            'make_thing', ('method',), ('test_autolink._RecordNamespaceReturnType.method',)
+            'make_thing', ('method',), ('test_autocodelink._RecordNamespaceReturnType.method',)
         )
     ]
 
@@ -675,8 +675,8 @@ def test_embed_links_merges_disk_records(tmp_path):
     out_file.write_text(html)
 
     env = _fake_env()
-    env.domains['py'].objects['test_autolink._RecordNamespaceReturnType'] = SimpleNamespace(
-        docname='api', node_id='test_autolink._RecordNamespaceReturnType'
+    env.domains['py'].objects['test_autocodelink._RecordNamespaceReturnType'] = SimpleNamespace(
+        docname='api', node_id='test_autocodelink._RecordNamespaceReturnType'
     )
     records_dir = tmp_path / 'records'
     autolink.record_namespace_to_disk(
@@ -690,7 +690,7 @@ def test_embed_links_merges_disk_records(tmp_path):
     autolink._embed_links(app, None)
     result = out_file.read_text()
 
-    assert 'href="api#test_autolink._RecordNamespaceReturnType"' in result
+    assert 'href="api#test_autocodelink._RecordNamespaceReturnType"' in result
 
 
 def test_embed_links_call_chain_and_plain_candidate_coexist(tmp_path):
