@@ -13,6 +13,7 @@ from docutils.parsers.rst import Directive
 from docutils.parsers.rst import directives
 
 from sphinx_autocodelink import _note_index_doc
+from sphinx_autocodelink import exec_with_local_scopes
 from sphinx_autocodelink import record_namespace
 
 if TYPE_CHECKING:
@@ -43,8 +44,8 @@ class AutoCodeLink(Directive):
         code = doctest.script_from_examples(source) if is_doctest else source
 
         env = self.state.document.settings.env
-        namespace: dict = {}
-        exec(compile(code, f'<{env.docname}>', 'exec'), namespace)  # noqa: S102
+        filename = f'<{env.docname}>'
+        namespace = exec_with_local_scopes(compile(code, filename, 'exec'), {}, filename)
         record_namespace(
             env=env,
             docname=env.docname,

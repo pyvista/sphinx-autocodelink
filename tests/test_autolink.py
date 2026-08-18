@@ -238,6 +238,65 @@ def test_call_chain_candidates_unresolvable_return_type():
     assert candidates == []
 
 
+class _LocalScopeThing:
+    def method(self) -> None:
+        """Do nothing."""
+
+
+def test_exec_with_local_scopes_resolves_helper_function_locals():
+    # `thing` only ever exists inside `helper`'s own local scope -- never at module level --
+    # exactly the case a plain exec() can't resolve (see #contour_labels/anatomical_groups.py).
+    code = 'def helper():\n    thing = make_thing()\n    thing.method()\nhelper()\n'
+    namespace = {'make_thing': lambda: _LocalScopeThing()}
+    filename = '<test>'
+    resolved = autolink.exec_with_local_scopes(compile(code, filename, 'exec'), namespace, filename)
+
+    assert isinstance(resolved['thing'], _LocalScopeThing)
+    # the passed-in namespace itself still executes normally, unaffected by tracing.
+    assert 'thing' not in namespace
+    assert 'helper' in namespace
+
+
+def test_exec_with_local_scopes_ignores_library_internals():
+    # a local variable inside a call into ANOTHER file must not leak into resolution --
+    # only frames compiled from `filename` are captured.
+    def library_call():
+        unrelated_local = object()  # noqa: F841
+
+    code = 'library_call()\n'
+    namespace = {'library_call': library_call}
+    filename = '<test>'
+    resolved = autolink.exec_with_local_scopes(compile(code, filename, 'exec'), namespace, filename)
+
+    assert 'unrelated_local' not in resolved
+
+
+def test_exec_with_local_scopes_namespace_wins_over_captured_locals():
+    # if a local shares a name with something in the passed-in namespace, namespace wins.
+    code = 'def helper():\n    shared = 1\nhelper()\n'
+    namespace = {'shared': 'global-value'}
+    filename = '<test>'
+    resolved = autolink.exec_with_local_scopes(compile(code, filename, 'exec'), namespace, filename)
+
+    assert resolved['shared'] == 'global-value'
+
+
+def test_exec_with_local_scopes_restores_prior_trace_function():
+    sentinel_calls = []
+
+    def sentinel_tracer(frame, event, arg):
+        sentinel_calls.append(event)
+        return sentinel_tracer
+
+    sys.settrace(sentinel_tracer)
+    try:
+        filename = '<test>'
+        autolink.exec_with_local_scopes(compile('x = 1\n', filename, 'exec'), {}, filename)
+        assert sys.gettrace() is sentinel_tracer
+    finally:
+        sys.settrace(None)
+
+
 class _RecordNamespaceReturnType:
     def method(self) -> None:
         """Do nothing."""

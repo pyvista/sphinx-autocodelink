@@ -35,6 +35,17 @@ def test_standalone_directive_links_without_pyvista(tmp_path):
     assert 'href="api.html#pkg.thing"' in result
 
 
+def test_directive_resolves_identifiers_local_to_a_helper_function(tmp_path):
+    # `local_ref` in index.rst's second `.. autocodelink::` block only ever exists inside
+    # its own helper function's local scope -- a plain exec() couldn't resolve it.
+    _, result = _build(tmp_path)
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api.html#pkg.thing">'
+        '<span class="n">local_ref</span><span class="o">.</span>'
+        '<span class="n">thing</span></a>' in result
+    )
+
+
 def test_sphinx_gallery_scraper_links_survives_joblib_workers(tmp_path):
     # `parallel=2` forces Sphinx-Gallery to hand examples to separate joblib
     # worker processes -- the whole reason records go to disk instead of `env`.

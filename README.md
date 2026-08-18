@@ -111,6 +111,25 @@ list either way, so a name referenced from just one place never gets a pointless
 Force it with `:group: always` or `:group: never`. Untagged pages fall under a generic "Other" bucket
 whenever grouping does happen.
 
+### Resolving identifiers local to a helper function
+
+Only a script's top-level namespace is resolvable by default -- a root identifier that only ever
+exists inside one of the script's own helper functions (a local variable, a parameter) has nothing
+to look it up against, even though the code accessing it is right there. Use
+`exec_with_local_scopes()` in place of a plain `exec()` to also resolve those:
+
+```python
+from sphinx_autocodelink import exec_with_local_scopes
+
+namespace = exec_with_local_scopes(compile(code, filename, 'exec'), {}, filename)
+```
+
+It runs `code` exactly as `exec(code, namespace)` would, and returns a namespace with every one of
+the script's own function calls' own locals merged in underneath -- at the cost of some precision, a
+local name in one call can shadow what globals (or a *different* call) bound under the same name.
+Only frames compiled from `filename` are captured, so calls into library internals aren't traced or
+merged in.
+
 ### Library use
 
 A consumer that already executes example code for its own purposes (e.g. to render a figure) can

@@ -7,9 +7,11 @@ code for its own purposes (e.g. to render a figure) calls
 :func:`record_namespace` with the resulting namespace; call :func:`setup`
 from that consumer's own Sphinx ``setup(app)`` to wire up link embedding.
 
-Limitations: only the final namespace state is used, and a call with no
-intermediate variable (``pv.Sphere().plot()``) only resolves its trailing
-attribute when the call's return annotation is a plain, resolvable class name.
+Limitations: a call with no intermediate variable (``pv.Sphere().plot()``) only
+resolves its trailing attribute when the call's return annotation is a plain,
+resolvable class name. Root identifiers that only ever exist inside a script's
+own helper functions (never in its top-level namespace) need
+:func:`exec_with_local_scopes` instead of a plain ``exec()`` to resolve.
 """
 
 from __future__ import annotations
@@ -23,11 +25,13 @@ import json
 from pathlib import Path
 import re
 import shutil
+import sys
 from typing import TYPE_CHECKING
 from typing import Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from types import CodeType
 
     from sphinx.application import Sphinx
     from sphinx.environment import BuildEnvironment
@@ -297,6 +301,49 @@ def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _C
         if candidates:
             records.append(_CallCandidate(call_target, trailing, tuple(candidates)))
     return records
+
+
+def exec_with_local_scopes(
+    code: CodeType, namespace: dict[str, Any], filename: str
+) -> dict[str, Any]:
+    """Execute ``code`` in ``namespace``, and return every local scope seen merged in.
+
+    A root identifier used only inside the script's own helper functions never
+    reaches its top-level namespace, so a plain ``exec()`` can't resolve it for
+    :func:`record_namespace` -- there's nothing to look the name up against.
+    This traces the execution and captures every one of the script's own
+    function calls' own locals too, merging them in underneath ``namespace``
+    (which still wins on name conflicts). Only frames compiled from
+    ``filename`` are captured; calls into library internals are not traced or
+    merged in, both to avoid false matches from unrelated same-named locals
+    deep in a dependency and to keep the tracing overhead down.
+
+    The cost of the wider net: a local name bound in one of the script's own
+    calls can still shadow what globals (or a *different* call) bound under
+    the same name, since everything captured is merged into one flat
+    namespace rather than kept scope-by-scope.
+
+    ``code`` is executed in ``namespace`` exactly as a plain ``exec(code,
+    namespace)`` would -- ``namespace`` itself is unaffected by the tracing,
+    only the returned dict differs.
+    """
+    captured: dict[str, Any] = {}
+
+    def _tracer(frame: Any, event: str, arg: Any) -> Any:
+        if event == 'return' and frame.f_code.co_filename == filename:
+            captured.update(frame.f_locals)
+        return _tracer
+
+    old_trace = sys.gettrace()
+    sys.settrace(_tracer)
+    try:
+        exec(code, namespace)  # noqa: S102 -- caller controls what's compiled here
+    finally:
+        sys.settrace(old_trace)
+
+    merged = dict(captured)
+    merged.update(namespace)
+    return merged
 
 
 def record_namespace(
