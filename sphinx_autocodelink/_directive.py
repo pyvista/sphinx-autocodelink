@@ -123,7 +123,7 @@ class AutoCodeLinkIndex(Directive):
             return [placeholder]
 
         section = nodes.section(classes=['sphinx-autocodelink-backrefs'])
-        section['ids'] = [nodes.make_id(f'autocodelink-backrefs-{opts["name"] or "index"}')]
+        section['ids'] = [nodes.make_id(f'autocodelink-{opts["name"] or "index"}')]
         section += nodes.title(label, label)
         section += placeholder
         self.state.document.note_implicit_target(section, section)

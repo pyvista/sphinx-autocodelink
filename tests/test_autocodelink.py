@@ -536,17 +536,17 @@ def test_render_ref_list_collapses_past_the_threshold():
 
 def test_strip_nav_links_to_removes_matching_li():
     html = (
-        '<ul><li class="toc-h2"><a class="nav-link" href="#autocodelink-backrefs-pkg-thing">'
+        '<ul><li class="toc-h2"><a class="nav-link" href="#autocodelink-pkg-thing">'
         'Used In</a></li><li class="toc-h2"><a href="#other">Other</a></li></ul>'
     )
-    result = autolink._strip_nav_links_to(html, {'autocodelink-backrefs-pkg-thing'})
+    result = autolink._strip_nav_links_to(html, {'autocodelink-pkg-thing'})
     assert 'Used In' not in result
     assert '<a href="#other">Other</a>' in result
 
 
 def test_strip_nav_links_to_ignores_unrelated_ids():
     html = '<li><a href="#unrelated">Unrelated</a></li>'
-    assert autolink._strip_nav_links_to(html, {'autocodelink-backrefs-pkg-thing'}) == html
+    assert autolink._strip_nav_links_to(html, {'autocodelink-pkg-thing'}) == html
 
 
 def test_fill_index_placeholders_drops_dangling_nav_link_for_hidden_section(tmp_path):
@@ -555,9 +555,9 @@ def test_fill_index_placeholders_drops_dangling_nav_link_for_hidden_section(tmp_
     html = (
         '<html><body>'
         '<nav><ul><li class="toc-h2 nav-item toc-entry">'
-        '<a class="reference internal nav-link" href="#autocodelink-backrefs-pkg-unused">'
+        '<a class="reference internal nav-link" href="#autocodelink-pkg-unused">'
         'Used In</a></li></ul></nav>'
-        '<section class="sphinx-autocodelink-backrefs" id="autocodelink-backrefs-pkg-unused">'
+        '<section class="sphinx-autocodelink-backrefs" id="autocodelink-pkg-unused">'
         '<h2>Used In</h2>'
         '<div class="sphinx-autocodelink-index" data-opts="'
         '{&quot;name&quot;: &quot;pkg.unused&quot;, &quot;hide_empty&quot;: true, '
