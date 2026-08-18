@@ -78,6 +78,12 @@ standalone `.. autocodelink::` directive and `record_namespace()`, which do reso
 function](#resolving-identifiers-local-to-a-helper-function)); that mechanism traces the code's own
 execution, which isn't available to hook into Sphinx-Gallery's own execution of an example script.
 
+A local name that's *also* bound at module level, to a value of the same type, resolves anyway --
+resolution matches identifier text against the module namespace by name, not by real lexical scope,
+so a same-named module-level variable is indistinguishable from the local one shadowing it. Not a
+workaround to rely on deliberately: a same-named module-level variable of a *different* type
+resolves to the wrong link, not to no link at all.
+
 If `sphinx_gallery_conf['reference_url']` is also configured for a module `AutoCodeLinkScraper`
 covers too, both will try to link the same identifiers. This extension runs its own embedding after
 Sphinx-Gallery's, and skips anything already inside a link -- so the two don't produce broken,
