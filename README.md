@@ -59,10 +59,24 @@ Sphinx-Gallery's own `parallel=True` mode runs each example in a separate worker
 Sphinx's usual mechanism for merging data back into the main build. `AutoCodeLinkScraper` writes its
 records to disk instead, so they survive regardless.
 
-Only resolves identifiers in an example's own top-level (module) scope -- a root identifier that
-only ever exists inside one of the example's own helper functions isn't resolvable here (unlike the
-standalone `.. autocodelink::` directive; see [Resolving identifiers local to a helper
-function](#resolving-identifiers-local-to-a-helper-function)).
+**Limitation: only resolves identifiers in an example's own top-level (module) scope.** A root
+identifier that only ever exists inside one of the example's own helper functions -- a local
+variable, a parameter -- isn't resolvable:
+
+```python
+def plot_it(mesh):
+    smoothed = mesh.smooth_taubin()  # not linked: `smoothed` never leaves plot_it's own scope
+    smoothed.plot()
+
+
+plot_it(pv.Sphere())
+```
+
+There's no workaround for Sphinx-Gallery examples specifically -- this is different from the
+standalone `.. autocodelink::` directive and `record_namespace()`, which do resolve this case (see
+[Resolving identifiers local to a helper
+function](#resolving-identifiers-local-to-a-helper-function)); that mechanism traces the code's own
+execution, which isn't available to hook into Sphinx-Gallery's own execution of an example script.
 
 If `sphinx_gallery_conf['reference_url']` is also configured for a module `AutoCodeLinkScraper`
 covers too, both will try to link the same identifiers. This extension runs its own embedding after
