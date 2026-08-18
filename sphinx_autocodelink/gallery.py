@@ -10,10 +10,28 @@ separate joblib worker processes that never go through Sphinx's own
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+from typing import TYPE_CHECKING
 from typing import Any
+
+from sphinx.util import logging
 
 from sphinx_autocodelink import DEFAULT_RECORDS_DIR
 from sphinx_autocodelink import record_namespace_to_disk
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sphinx.application import Sphinx
+    from sphinx.config import Config
+
+_logger = logging.getLogger(__name__)
+
+#: Mailbox from `_call_memory_with_tracing`/`trace_call_memory` to the scraper's own `__call__`,
+#: for the one example block Sphinx-Gallery is between executing and scraping right now.
+#: Sphinx-Gallery calls them in that exact order for one block before moving to the next, even
+#: under `parallel=True` (a separate worker process per example, so no cross-example clash).
+_LAST_TRACED_LOCALS: dict[str, Any] = {}
 
 
 class AutoCodeLinkScraper:
@@ -30,15 +48,26 @@ class AutoCodeLinkScraper:
     """
 
     def __init__(
-        self, records_dir: str = DEFAULT_RECORDS_DIR, category: str = 'Sphinx Gallery'
+        self,
+        records_dir: str = DEFAULT_RECORDS_DIR,
+        category: str = 'Sphinx Gallery',
+        trace_locals: bool = True,
     ) -> None:
         """Store the records directory (relative to the Sphinx source directory) and category.
 
         ``category`` tags every page this scraper records, for grouping in
         ``.. autocodelink-index::`` output; pass ``''`` to leave pages untagged.
+
+        ``trace_locals`` resolves identifiers local to an example's own helper
+        functions too (see :func:`sphinx_autocodelink.exec_with_local_scopes`),
+        by taking over ``sphinx_gallery_conf['show_memory']`` -- only if it
+        isn't already set to something else. Set to ``False`` to opt out, or
+        if you need ``show_memory`` for its own purpose; see
+        :func:`trace_call_memory` to use both.
         """
         self.records_dir = records_dir
         self.category = category
+        self.trace_locals = trace_locals
 
     def __call__(self, block: Any, block_vars: dict[str, Any], gallery_conf: dict[str, Any]) -> str:
         """Record this block's identifiers. Called by Sphinx-Gallery; returns no image."""
@@ -48,11 +77,94 @@ class AutoCodeLinkScraper:
             .with_suffix('')
             .as_posix()
         )
+        namespace = block_vars['example_globals']
+        if self.trace_locals and _LAST_TRACED_LOCALS:
+            namespace = {**_LAST_TRACED_LOCALS, **namespace}
+            _LAST_TRACED_LOCALS.clear()
         record_namespace_to_disk(
             directory=Path(gallery_conf['src_dir']) / self.records_dir,
             docname=docname,
             source=block.content,
-            namespace=block_vars['example_globals'],
+            namespace=namespace,
             category=self.category,
         )
         return ''
+
+
+def _trace_call(func: Callable[[], Any]) -> tuple[dict[str, Any], Any]:
+    """Call ``func()`` under tracing; return every local scope seen, and ``func()``'s result."""
+    captured: dict[str, Any] = {}
+
+    def _tracer(frame: Any, event: str, arg: Any) -> Any:
+        if event == 'return':
+            captured.update(frame.f_locals)
+        return _tracer
+
+    old_trace = sys.gettrace()
+    sys.settrace(_tracer)
+    try:
+        result = func()
+    finally:
+        sys.settrace(old_trace)
+    return captured, result
+
+
+def _call_memory_with_tracing(func: Callable[[], Any]) -> tuple[float, Any]:
+    """Sphinx-Gallery ``show_memory`` callable: trace ``func()``, stash its locals for scraping."""
+    captured, result = _trace_call(func)
+    _LAST_TRACED_LOCALS.clear()
+    _LAST_TRACED_LOCALS.update(captured)
+    return 0.0, result
+
+
+def trace_call_memory(
+    inner: Callable[[Callable[[], Any]], tuple[float, Any]],
+) -> Callable[[Callable[[], Any]], tuple[float, Any]]:
+    """Wrap your own Sphinx-Gallery ``show_memory`` callable with local-scope tracing.
+
+    Use when ``sphinx_gallery_conf['show_memory']`` is already set to
+    something else for its own purpose (e.g. real memory profiling):
+    ``AutoCodeLinkScraper``'s own automatic wiring backs off rather than
+    overriding it, and logs a warning pointing here.
+
+    .. code-block:: python
+
+        from sphinx_autocodelink.gallery import trace_call_memory
+
+        sphinx_gallery_conf = {
+            'show_memory': trace_call_memory(my_own_show_memory),
+        }
+    """
+
+    def _wrapped(func: Callable[[], Any]) -> tuple[float, Any]:
+        captured, (mem_max, result) = _trace_call(lambda: inner(func))
+        _LAST_TRACED_LOCALS.clear()
+        _LAST_TRACED_LOCALS.update(captured)
+        return mem_max, result
+
+    return _wrapped
+
+
+def _install_gallery_tracing(app: Sphinx, config: Config) -> None:
+    """Wrap Sphinx-Gallery's own ``show_memory`` with local-scope tracing, if wanted and free.
+
+    Connected at ``config-inited`` priority 20: after Sphinx-Gallery's own
+    ``fill_gallery_conf_defaults`` (priority 10), so ``image_scrapers`` is
+    already resolved into real callables to check against, and
+    ``show_memory`` reflects whatever the user actually configured.
+    """
+    gallery_conf = getattr(config, 'sphinx_gallery_conf', None)
+    if not gallery_conf:
+        return
+    scrapers = gallery_conf.get('image_scrapers') or ()
+    if not any(isinstance(s, AutoCodeLinkScraper) and s.trace_locals for s in scrapers):
+        return
+    if gallery_conf.get('show_memory'):
+        _logger.warning(
+            "sphinx_autocodelink: 'show_memory' is already set in sphinx_gallery_conf, so "
+            'AutoCodeLinkScraper local-scope tracing is off for Sphinx-Gallery examples. '
+            'Wrap your own show_memory callable with '
+            'sphinx_autocodelink.gallery.trace_call_memory() to use both.'
+        )
+        return
+    gallery_conf['show_memory'] = _call_memory_with_tracing

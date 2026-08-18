@@ -46,6 +46,18 @@ def test_directive_resolves_identifiers_local_to_a_helper_function(tmp_path):
     )
 
 
+def test_sphinx_gallery_scraper_resolves_identifiers_local_to_a_helper_function(tmp_path):
+    # gallery_src/plot_local_scope.py: `local_ref` only exists inside `helper`'s own local
+    # scope -- exercises AutoCodeLinkScraper's show_memory-based tracing, not our own exec().
+    outdir, _ = _build(tmp_path)
+    example_html = (outdir / 'auto_examples' / 'plot_local_scope.html').read_text()
+    assert (
+        '<a class="sphinx-autocodelink-a" href="../api.html#pkg.thing">'
+        '<span class="n">local_ref</span><span class="o">.</span>'
+        '<span class="n">thing</span></a>' in example_html
+    )
+
+
 def test_sphinx_gallery_scraper_links_survives_joblib_workers(tmp_path):
     # `parallel=2` forces Sphinx-Gallery to hand examples to separate joblib
     # worker processes -- the whole reason records go to disk instead of `env`.
