@@ -263,6 +263,66 @@ def test_record_namespace():
     ]
 
 
+def test_record_namespace_to_disk_no_records(tmp_path):
+    autolink.record_namespace_to_disk(
+        directory=tmp_path, docname='index', source='x = 1', namespace={}
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_record_namespace_to_disk_and_load(tmp_path):
+    def make_thing() -> _RecordNamespaceReturnType:
+        return _RecordNamespaceReturnType()
+
+    autolink.record_namespace_to_disk(
+        directory=tmp_path,
+        docname='examples/plot_thing',
+        source='make_thing().method',
+        namespace={'make_thing': make_thing},
+    )
+    loaded = autolink._load_disk_records(tmp_path)
+    call_candidates = [
+        r for r in loaded['examples/plot_thing'] if isinstance(r, autolink._CallCandidate)
+    ]
+    assert call_candidates == [
+        autolink._CallCandidate(
+            'make_thing', ('method',), ('test_autolink._RecordNamespaceReturnType.method',)
+        )
+    ]
+
+
+def test_record_namespace_to_disk_appends(tmp_path):
+    autolink.record_namespace_to_disk(
+        directory=tmp_path, docname='index', source='x', namespace={'x': _RecordNamespaceReturnType}
+    )
+    autolink.record_namespace_to_disk(
+        directory=tmp_path, docname='index', source='x', namespace={'x': _RecordNamespaceReturnType}
+    )
+    loaded = autolink._load_disk_records(tmp_path)
+    assert len(loaded['index']) == 2
+
+
+def test_load_disk_records_missing_directory(tmp_path):
+    assert autolink._load_disk_records(tmp_path / 'does-not-exist') == {}
+
+
+def test_clear_disk_records_disabled():
+    app = SimpleNamespace(config=SimpleNamespace(), srcdir='/nonexistent')
+    assert autolink._clear_disk_records(app) is None
+
+
+def test_clear_disk_records_removes_directory(tmp_path):
+    records_dir = tmp_path / 'src' / '_autocodelink_records'
+    records_dir.mkdir(parents=True)
+    (records_dir / 'index.json').write_text('[]')
+    app = SimpleNamespace(
+        config=SimpleNamespace(autocodelink_records_dir='_autocodelink_records'),
+        srcdir=str(tmp_path / 'src'),
+    )
+    autolink._clear_disk_records(app)
+    assert not records_dir.exists()
+
+
 def test_merge_records():
     env = SimpleNamespace()
     other = SimpleNamespace()
@@ -280,18 +340,53 @@ def test_purge_doc():
 
 def test_setup():
     connected = {}
+    config_values = {}
+    directives = {}
 
     class FakeApp:
+        config = SimpleNamespace(autocodelink_sources=autolink.DEFAULT_SOURCES)
+
         def connect(self, event, handler):
             connected[event] = handler
 
+        def add_config_value(self, name, default, rebuild):
+            config_values[name] = (default, rebuild)
+
+        def add_directive(self, name, directive):
+            directives[name] = directive
+
     result = autolink.setup(FakeApp())
     assert connected == {
+        'builder-inited': autolink._clear_disk_records,
         'env-merge-info': autolink._merge_records,
         'env-purge-doc': autolink._purge_doc,
         'build-finished': autolink._embed_links,
     }
+    assert config_values == {
+        'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
+        'autocodelink_sources': (autolink.DEFAULT_SOURCES, 'html'),
+    }
+    assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}
+
+
+def test_setup_directive_disabled_via_sources():
+    directives = {}
+
+    class FakeApp:
+        config = SimpleNamespace(autocodelink_sources=('gallery',))
+
+        def connect(self, event, handler):
+            pass
+
+        def add_config_value(self, name, default, rebuild):
+            pass
+
+        def add_directive(self, name, directive):
+            directives[name] = directive
+
+    autolink.setup(FakeApp())
+    assert directives.keys() == {'autocodelink-index'}
 
 
 def test_intersphinx_inventory():
@@ -311,14 +406,14 @@ def test_intersphinx_inventory():
 
 
 def test_resolve_link_external():
-    link = autolink._resolve_link(
+    resolved = autolink._resolve_link(
         ('external.thing',),
         docname='index',
         app=None,
         local={},
         external={'external.thing': 'https://example.invalid/thing.html'},
     )
-    assert link == 'https://example.invalid/thing.html'
+    assert resolved == ('external.thing', 'https://example.invalid/thing.html')
 
 
 def test_embed_links_skips_on_exception():
@@ -332,7 +427,9 @@ def test_embed_links_skips_non_html_builder():
 
 
 def test_embed_links_no_records():
-    app = SimpleNamespace(builder=SimpleNamespace(format='html'), env=SimpleNamespace())
+    app = SimpleNamespace(
+        builder=SimpleNamespace(format='html'), env=SimpleNamespace(), config=SimpleNamespace()
+    )
     assert autolink._embed_links(app, None) is None
 
 
@@ -345,14 +442,24 @@ def _fake_env():
     )
 
 
+def _fake_app(env, tmp_path):
+    return SimpleNamespace(
+        builder=SimpleNamespace(
+            format='html',
+            get_target_uri=lambda docname: f'{docname}.html',
+            get_relative_uri=lambda _from, to: to,
+        ),
+        outdir=str(tmp_path),
+        srcdir=str(tmp_path),
+        env=env,
+        config=SimpleNamespace(autocodelink_records_dir=None),
+    )
+
+
 def test_embed_links_missing_output_file(tmp_path):
     env = _fake_env()
     setattr(env, autolink._ENV_ATTR, {'missing_doc': [autolink._Candidate('name', ('x.Foo',))]})
-    app = SimpleNamespace(
-        builder=SimpleNamespace(format='html', get_target_uri=lambda docname: f'{docname}.html'),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     assert autolink._embed_links(app, None) is None
 
 
@@ -362,11 +469,7 @@ def test_embed_links_no_resolved_candidates(tmp_path):
 
     env = _fake_env()
     setattr(env, autolink._ENV_ATTR, {'exists_doc': [autolink._Candidate('name', ('x.Foo',))]})
-    app = SimpleNamespace(
-        builder=SimpleNamespace(format='html', get_target_uri=lambda docname: f'{docname}.html'),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     assert out_file.read_text() == '<html><body><span class="n">name</span></body></html>'
 
@@ -390,15 +493,7 @@ def test_embed_links_call_chain(tmp_path):
         autolink._ENV_ATTR,
         {'index': [autolink._CallCandidate('pv.Sphere', ('plot',), ('pyvista.PolyData.plot',))]},
     )
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     result = out_file.read_text()
 
@@ -409,6 +504,30 @@ def test_embed_links_call_chain(tmp_path):
         '<span class="o">.</span><span class="n">plot</span></a>' in result
     )
     assert re.search(r'<a\b[^>]*><a\b', result) is None
+
+
+def test_embed_links_merges_disk_records(tmp_path):
+    html = '<pre><span class="n">mesh</span></pre>'
+    out_file = tmp_path / 'index.html'
+    out_file.write_text(html)
+
+    env = _fake_env()
+    env.domains['py'].objects['test_autolink._RecordNamespaceReturnType'] = SimpleNamespace(
+        docname='api', node_id='test_autolink._RecordNamespaceReturnType'
+    )
+    records_dir = tmp_path / 'records'
+    autolink.record_namespace_to_disk(
+        directory=records_dir,
+        docname='index',
+        source='mesh',
+        namespace={'mesh': _RecordNamespaceReturnType()},
+    )
+    app = _fake_app(env, tmp_path)
+    app.config.autocodelink_records_dir = 'records'
+    autolink._embed_links(app, None)
+    result = out_file.read_text()
+
+    assert 'href="api#test_autolink._RecordNamespaceReturnType"' in result
 
 
 def test_embed_links_call_chain_and_plain_candidate_coexist(tmp_path):
@@ -437,15 +556,7 @@ def test_embed_links_call_chain_and_plain_candidate_coexist(tmp_path):
             ]
         },
     )
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     result = out_file.read_text()
 
@@ -478,15 +589,7 @@ def test_embed_links_call_chain_dedup(tmp_path):
             ]
         },
     )
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     result = out_file.read_text()
 
@@ -516,15 +619,7 @@ def test_embed_links_call_chain_already_linked(tmp_path):
         autolink._ENV_ATTR,
         {'index': [autolink._CallCandidate('pv.Sphere', ('plot',), ('pyvista.PolyData.plot',))]},
     )
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     assert out_file.read_text() == html
 
@@ -540,15 +635,7 @@ def test_embed_links_call_chain_unresolvable(tmp_path):
         autolink._ENV_ATTR,
         {'index': [autolink._CallCandidate('x', ('plot',), ('nowhere.Foo.plot',))]},
     )
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     assert out_file.read_text() == html
 
@@ -570,15 +657,7 @@ def test_embed_links_name_dedup(tmp_path):
             ]
         },
     )
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     result = out_file.read_text()
 
@@ -595,14 +674,6 @@ def test_embed_links_name_already_linked(tmp_path):
     env = _fake_env()
     env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(docname='api', node_id='pkg.mesh')
     setattr(env, autolink._ENV_ATTR, {'index': [autolink._Candidate('mesh', ('pkg.mesh',))]})
-    app = SimpleNamespace(
-        builder=SimpleNamespace(
-            format='html',
-            get_target_uri=lambda docname: f'{docname}.html',
-            get_relative_uri=lambda _from, to: to,
-        ),
-        outdir=str(tmp_path),
-        env=env,
-    )
+    app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)
     assert out_file.read_text() == html

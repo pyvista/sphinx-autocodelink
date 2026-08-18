@@ -3,7 +3,14 @@ build-backend = 'setuptools.build_meta'
 requires = ['setuptools>=64', 'setuptools_scm>=8']
 
 [dependency-groups]
-dev = ['pre-commit', 'pytest', 'pytest-cov', 'sphinx']
+dev = [
+  'joblib',
+  'pre-commit',
+  'pytest',
+  'pytest-cov',
+  'sphinx',
+  'sphinx-gallery',
+]
 
 [project]
 authors = [{ name = 'The PyVista Developers', email = 'info@pyvista.org' }]
@@ -87,7 +94,14 @@ ignore = ['D203', 'D211', 'D213']
 'tests/*' = ['D103']
 # sphinx-gallery example scripts: the module docstring is an RST page title
 # (title line + underline), not prose -- pydocstyle's summary-line rules don't apply.
-'tests/tinypages/gallery_src/*' = ['D205', 'D400', 'D415', 'T201']
+'tests/tinypages/gallery_src/*' = [
+  'D205',
+  'D212',
+  'D400',
+  'D415',
+  'I002',
+  'T201',
+]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

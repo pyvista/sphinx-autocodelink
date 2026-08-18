@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from html import escape
+from html import unescape
 import inspect
+import json
 from pathlib import Path
 import re
+import shutil
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -30,6 +34,9 @@ if TYPE_CHECKING:
 
 #: ``env`` attribute holding recorded candidates, keyed by docname.
 _ENV_ATTR = 'sphinx_autocodelink_records'
+
+#: ``env`` attribute holding the set of docnames hosting an ``.. autocodelink-index::``.
+_INDEX_DOCS_ATTR = 'sphinx_autocodelink_index_docs'
 
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
@@ -270,15 +277,9 @@ def _call_chain_candidates(
     return _class_candidates(return_type, list(trailing))
 
 
-def record_namespace(
-    *, env: BuildEnvironment, docname: str, source: str, namespace: dict[str, Any]
-) -> None:
-    """Record candidate documented names for every identifier in ``source``."""
-    all_records: dict[str, list[_Candidate | _CallCandidate]] | None = getattr(env, _ENV_ATTR, None)
-    if all_records is None:
-        all_records = {}
-        setattr(env, _ENV_ATTR, all_records)
-    records = all_records.setdefault(docname, [])
+def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _CallCandidate]:
+    """Return every resolved candidate for the identifiers accessed in ``source``."""
+    records: list[_Candidate | _CallCandidate] = []
     collected = _collect(source)
     for accessed in sorted(collected.accessed):
         candidates = _candidate_names(accessed, namespace)
@@ -288,6 +289,81 @@ def record_namespace(
         candidates = _call_chain_candidates(call_target, trailing, namespace)
         if candidates:
             records.append(_CallCandidate(call_target, trailing, tuple(candidates)))
+    return records
+
+
+def record_namespace(
+    *, env: BuildEnvironment, docname: str, source: str, namespace: dict[str, Any]
+) -> None:
+    """Record candidate documented names for every identifier in ``source``."""
+    all_records: dict[str, list[_Candidate | _CallCandidate]] | None = getattr(env, _ENV_ATTR, None)
+    if all_records is None:
+        all_records = {}
+        setattr(env, _ENV_ATTR, all_records)
+    all_records.setdefault(docname, []).extend(_records_for(source, namespace))
+
+
+def record_namespace_to_disk(
+    *, directory: str | Path, docname: str, source: str, namespace: dict[str, Any]
+) -> None:
+    """Like :func:`record_namespace`, but appended to a file under ``directory``.
+
+    For recording from a process Sphinx's own ``env-merge-info`` never sees
+    -- e.g. Sphinx-Gallery's own parallel (joblib) example workers.
+    """
+    records = _records_for(source, namespace)
+    if not records:
+        return
+    target = Path(directory) / f'{docname}.json'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    existing = json.loads(target.read_text()) if target.exists() else []
+    existing.extend(_to_jsonable(r) for r in records)
+    target.write_text(json.dumps(existing))
+
+
+def _to_jsonable(record: _Candidate | _CallCandidate) -> dict[str, Any]:
+    """Convert one record to a JSON-serializable dict."""
+    if isinstance(record, _CallCandidate):
+        return {
+            'call_target': record.call_target,
+            'trailing': list(record.trailing),
+            'candidates': list(record.candidates),
+        }
+    return {'accessed': record.accessed, 'candidates': list(record.candidates)}
+
+
+def _from_jsonable(entry: dict[str, Any]) -> _Candidate | _CallCandidate:
+    """Convert one JSON dict back to a record."""
+    if 'call_target' in entry:
+        return _CallCandidate(
+            entry['call_target'], tuple(entry['trailing']), tuple(entry['candidates'])
+        )
+    return _Candidate(entry['accessed'], tuple(entry['candidates']))
+
+
+def _load_disk_records(directory: Path) -> dict[str, list[_Candidate | _CallCandidate]]:
+    """Return every docname's records written by :func:`record_namespace_to_disk`."""
+    result: dict[str, list[_Candidate | _CallCandidate]] = {}
+    if not directory.is_dir():
+        return result
+    for file in directory.rglob('*.json'):
+        docname = file.relative_to(directory).with_suffix('').as_posix()
+        result[docname] = [_from_jsonable(e) for e in json.loads(file.read_text())]
+    return result
+
+
+def _clear_disk_records(app: Sphinx) -> None:
+    """Clear records left over from a previous build, if disk-based recording is enabled."""
+    records_dir = getattr(app.config, 'autocodelink_records_dir', None)
+    if records_dir:
+        shutil.rmtree(Path(app.srcdir) / records_dir, ignore_errors=True)
+
+
+def _note_index_doc(env: BuildEnvironment, docname: str) -> None:
+    """Record that ``docname`` hosts an ``.. autocodelink-index::`` placeholder."""
+    docs: set[str] = getattr(env, _INDEX_DOCS_ATTR, None) or set()
+    docs.add(docname)
+    setattr(env, _INDEX_DOCS_ATTR, docs)
 
 
 def _merge_records(
@@ -302,10 +378,15 @@ def _merge_records(
     ours.update(theirs)
     setattr(env, _ENV_ATTR, ours)
 
+    our_index_docs: set[str] = getattr(env, _INDEX_DOCS_ATTR, set())
+    their_index_docs: set[str] = getattr(other, _INDEX_DOCS_ATTR, set())
+    setattr(env, _INDEX_DOCS_ATTR, our_index_docs | their_index_docs)
+
 
 def _purge_doc(app: Sphinx, env: BuildEnvironment, docname: str) -> None:
     """Drop stale records for a document being re-read."""
     getattr(env, _ENV_ATTR, {}).pop(docname, None)
+    getattr(env, _INDEX_DOCS_ATTR, set()).discard(docname)
 
 
 # ---------------------------------------------------------------------------
@@ -340,14 +421,14 @@ def _resolve_link(
     app: Sphinx,
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
-) -> str | None:
-    """Return the first candidate's URL, local names taking priority, or ``None``."""
+) -> tuple[str, str] | None:
+    """Return the first candidate's ``(name, url)``, local names taking priority, or ``None``."""
     for name in candidates:
         if name in local:
             target_docname, anchor = local[name]
-            return f'{app.builder.get_relative_uri(docname, target_docname)}#{anchor}'
+            return name, f'{app.builder.get_relative_uri(docname, target_docname)}#{anchor}'
         if name in external:
-            return external[name]
+            return name, external[name]
     return None
 
 
@@ -356,12 +437,19 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
     if exception is not None or app.builder.format != 'html':
         return
 
-    records: dict[str, list[_Candidate | _CallCandidate]] = getattr(app.env, _ENV_ATTR, {})
-    if not records:
+    records: dict[str, list[_Candidate | _CallCandidate]] = dict(getattr(app.env, _ENV_ATTR, {}))
+    records_dir = getattr(app.config, 'autocodelink_records_dir', None)
+    sources = getattr(app.config, 'autocodelink_sources', DEFAULT_SOURCES)
+    if records_dir and 'gallery' in sources:
+        for docname, disk_records in _load_disk_records(Path(app.srcdir) / records_dir).items():
+            records.setdefault(docname, []).extend(disk_records)
+    index_docs: set[str] = set(getattr(app.env, _INDEX_DOCS_ATTR, ()))
+    if not records and not index_docs:
         return
 
     local = _local_inventory(app)
     external = _intersphinx_inventory(app)
+    backrefs: dict[str, set[str]] = {}
 
     for docname, candidates in records.items():
         out_file = Path(app.outdir) / (app.builder.get_target_uri(docname))
@@ -376,19 +464,23 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                 call_key = (candidate.call_target, candidate.trailing)
                 if call_key in resolved_calls:
                     continue
-                link = _resolve_link(
+                resolved = _resolve_link(
                     candidate.candidates, docname=docname, app=app, local=local, external=external
                 )
-                if link is not None:
+                if resolved is not None:
+                    name, link = resolved
                     resolved_calls[call_key] = link
+                    backrefs.setdefault(name, set()).add(docname)
             else:
                 if candidate.accessed in resolved_names:
                     continue
-                link = _resolve_link(
+                resolved = _resolve_link(
                     candidate.candidates, docname=docname, app=app, local=local, external=external
                 )
-                if link is not None:
+                if resolved is not None:
+                    name, link = resolved
                     resolved_names[candidate.accessed] = link
+                    backrefs.setdefault(name, set()).add(docname)
         if not resolved_names and not resolved_calls:
             continue
 
@@ -438,14 +530,137 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
 
         out_file.write_text(combined.sub(_wrap, html), encoding='utf-8')
 
+    if index_docs:
+        _fill_index_placeholders(app, index_docs, backrefs, local=local, external=external)
+
+
+#: Matches one ``.. autocodelink-index::`` placeholder, ``data-name`` empty for the full index.
+_INDEX_PLACEHOLDER_RE = re.compile(
+    r'<div class="sphinx-autocodelink-index" data-name="([^"]*)"></div>'
+)
+
+
+def _index_entry_link(
+    name: str,
+    *,
+    from_docname: str,
+    app: Sphinx,
+    local: dict[str, tuple[str, str]],
+    external: dict[str, str],
+) -> str | None:
+    """Return ``name``'s own documented URL, relative to ``from_docname``."""
+    if name in local:
+        target_docname, anchor = local[name]
+        return f'{app.builder.get_relative_uri(from_docname, target_docname)}#{anchor}'
+    return external.get(name)
+
+
+def _render_index_entry(
+    target: str, backrefs: dict[str, set[str]], *, docname: str, app: Sphinx
+) -> str:
+    """Render one target name's list of referencing pages, or ``''`` if it has none."""
+    refs = sorted(backrefs.get(target, ()))
+    if not refs:
+        return ''
+    items = ''.join(
+        f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(ref)}</a></li>'
+        for ref in refs
+    )
+    return f'<ul class="sphinx-autocodelink-index">{items}</ul>'
+
+
+def _render_index_html(
+    name: str,
+    backrefs: dict[str, set[str]],
+    *,
+    docname: str,
+    app: Sphinx,
+    local: dict[str, tuple[str, str]],
+    external: dict[str, str],
+) -> str:
+    """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
+    if name:
+        rendered = _render_index_entry(name, backrefs, docname=docname, app=app)
+        return rendered or '<p class="sphinx-autocodelink-index-empty">No references found.</p>'
+
+    entries = []
+    for target in sorted(backrefs):
+        refs = sorted(backrefs.get(target, ()))
+        if not refs:
+            continue
+        link = _index_entry_link(
+            target, from_docname=docname, app=app, local=local, external=external
+        )
+        heading = f'<a href="{link}">{escape(target)}</a>' if link else escape(target)
+        items = ''.join(
+            f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(ref)}</a></li>'
+            for ref in refs
+        )
+        entries.append(f'<dt>{heading}</dt><dd><ul>{items}</ul></dd>')
+    if not entries:
+        return '<p class="sphinx-autocodelink-index-empty">No references found.</p>'
+    return f'<dl class="sphinx-autocodelink-index">{"".join(entries)}</dl>'
+
+
+def _fill_index_placeholders(
+    app: Sphinx,
+    index_docs: set[str],
+    backrefs: dict[str, set[str]],
+    *,
+    local: dict[str, tuple[str, str]],
+    external: dict[str, str],
+) -> None:
+    """Replace every ``.. autocodelink-index::`` placeholder with its rendered backreferences."""
+    for docname in index_docs:
+        out_file = Path(app.outdir) / app.builder.get_target_uri(docname)
+        if not out_file.exists():
+            continue
+        html = out_file.read_text(encoding='utf-8')
+
+        def _replace(match: re.Match[str], docname: str = docname) -> str:
+            name = unescape(match.group(1))
+            return _render_index_html(
+                name, backrefs, docname=docname, app=app, local=local, external=external
+            )
+
+        out_file.write_text(_INDEX_PLACEHOLDER_RE.sub(_replace, html), encoding='utf-8')
+
+
+#: Default value of the ``autocodelink_records_dir`` config value, and of
+#: :class:`sphinx_autocodelink.gallery.Scraper`'s ``records_dir`` -- matching
+#: defaults mean disk-based recording works without configuring either explicitly.
+DEFAULT_RECORDS_DIR = '_autocodelink_records'
+
+#: Default value of the ``autocodelink_sources`` config value: both sources enabled.
+DEFAULT_SOURCES = ('directive', 'gallery')
+
 
 def setup(app: Sphinx) -> dict[str, bool]:
-    """Wire up dynamic autolinking's Sphinx event hooks.
+    """Wire up dynamic autolinking.
 
-    Call from a consumer's own ``setup(app)`` alongside :func:`record_namespace`
-    calls; this alone does not resolve or embed anything.
+    Registers the ``.. autocodelink::`` and ``.. autocodelink-index::``
+    directives and the event hooks that resolve and embed links --
+    everything needed to use this extension on its own. A consumer that
+    already executes code for its own purposes can instead (or additionally)
+    call :func:`record_namespace` directly and call this from its own
+    ``setup(app)``; that path is always on, independent of
+    ``autocodelink_sources`` below.
+
+    ``autocodelink_sources`` selects which of this package's own two code
+    sources feed the embedded links: ``'directive'`` for the
+    ``.. autocodelink::`` directive, ``'gallery'`` for
+    :class:`sphinx_autocodelink.gallery.Scraper`. Defaults to both.
     """
+    from sphinx_autocodelink._directive import AutoCodeLink
+    from sphinx_autocodelink._directive import AutoCodeLinkIndex
+
+    app.connect('builder-inited', _clear_disk_records)
     app.connect('env-merge-info', _merge_records)
     app.connect('env-purge-doc', _purge_doc)
     app.connect('build-finished', _embed_links)
+    app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
+    app.add_config_value('autocodelink_sources', DEFAULT_SOURCES, rebuild='html')
+    if 'directive' in getattr(app.config, 'autocodelink_sources', DEFAULT_SOURCES):
+        app.add_directive('autocodelink', AutoCodeLink)
+    app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}
