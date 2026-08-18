@@ -16,7 +16,7 @@ from sphinx_autocodelink import DEFAULT_RECORDS_DIR
 from sphinx_autocodelink import record_namespace_to_disk
 
 
-class Scraper:
+class AutoCodeLinkScraper:
     """A no-op ``image_scrapers`` entry that records identifiers for linking.
 
     Add alongside your real image scraper(s), and add ``sphinx_autocodelink``
@@ -25,7 +25,7 @@ class Scraper:
     .. code-block:: python
 
         sphinx_gallery_conf = {
-            'image_scrapers': (Scraper(), 'matplotlib'),
+            'image_scrapers': (AutoCodeLinkScraper(), 'matplotlib'),
         }
     """
 

@@ -439,8 +439,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
 
     records: dict[str, list[_Candidate | _CallCandidate]] = dict(getattr(app.env, _ENV_ATTR, {}))
     records_dir = getattr(app.config, 'autocodelink_records_dir', None)
-    sources = getattr(app.config, 'autocodelink_sources', DEFAULT_SOURCES)
-    if records_dir and 'gallery' in sources:
+    if records_dir:
         for docname, disk_records in _load_disk_records(Path(app.srcdir) / records_dir).items():
             records.setdefault(docname, []).extend(disk_records)
     index_docs: set[str] = set(getattr(app.env, _INDEX_DOCS_ATTR, ()))
@@ -627,12 +626,9 @@ def _fill_index_placeholders(
 
 
 #: Default value of the ``autocodelink_records_dir`` config value, and of
-#: :class:`sphinx_autocodelink.gallery.Scraper`'s ``records_dir`` -- matching
+#: :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s ``records_dir`` -- matching
 #: defaults mean disk-based recording works without configuring either explicitly.
 DEFAULT_RECORDS_DIR = '_autocodelink_records'
-
-#: Default value of the ``autocodelink_sources`` config value: both sources enabled.
-DEFAULT_SOURCES = ('directive', 'gallery')
 
 
 def setup(app: Sphinx) -> dict[str, bool]:
@@ -643,13 +639,12 @@ def setup(app: Sphinx) -> dict[str, bool]:
     everything needed to use this extension on its own. A consumer that
     already executes code for its own purposes can instead (or additionally)
     call :func:`record_namespace` directly and call this from its own
-    ``setup(app)``; that path is always on, independent of
-    ``autocodelink_sources`` below.
+    ``setup(app)``.
 
-    ``autocodelink_sources`` selects which of this package's own two code
-    sources feed the embedded links: ``'directive'`` for the
-    ``.. autocodelink::`` directive, ``'gallery'`` for
-    :class:`sphinx_autocodelink.gallery.Scraper`. Defaults to both.
+    Each code source is opt-in by use, not by configuration: the
+    ``.. autocodelink::`` directive only affects blocks that use it, and
+    :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper` only records
+    when added to a ``sphinx_gallery_conf['image_scrapers']``.
     """
     from sphinx_autocodelink._directive import AutoCodeLink
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
@@ -659,8 +654,6 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.connect('env-purge-doc', _purge_doc)
     app.connect('build-finished', _embed_links)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
-    app.add_config_value('autocodelink_sources', DEFAULT_SOURCES, rebuild='html')
-    if 'directive' in getattr(app.config, 'autocodelink_sources', DEFAULT_SOURCES):
-        app.add_directive('autocodelink', AutoCodeLink)
+    app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}

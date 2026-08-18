@@ -344,8 +344,6 @@ def test_setup():
     directives = {}
 
     class FakeApp:
-        config = SimpleNamespace(autocodelink_sources=autolink.DEFAULT_SOURCES)
-
         def connect(self, event, handler):
             connected[event] = handler
 
@@ -362,31 +360,9 @@ def test_setup():
         'env-purge-doc': autolink._purge_doc,
         'build-finished': autolink._embed_links,
     }
-    assert config_values == {
-        'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
-        'autocodelink_sources': (autolink.DEFAULT_SOURCES, 'html'),
-    }
+    assert config_values == {'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html')}
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}
-
-
-def test_setup_directive_disabled_via_sources():
-    directives = {}
-
-    class FakeApp:
-        config = SimpleNamespace(autocodelink_sources=('gallery',))
-
-        def connect(self, event, handler):
-            pass
-
-        def add_config_value(self, name, default, rebuild):
-            pass
-
-        def add_directive(self, name, directive):
-            directives[name] = directive
-
-    autolink.setup(FakeApp())
-    assert directives.keys() == {'autocodelink-index'}
 
 
 def test_intersphinx_inventory():
