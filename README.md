@@ -114,7 +114,7 @@ document titles, so it never drifts from what the page actually says), not their
 
 Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used in"
 section -- to every autodoc-documented object's own docstring automatically, via
-``autodoc-process-docstring``. Off by default; requires ``sphinx.ext.autodoc`` (directly, or via
+`autodoc-process-docstring`. Off by default; requires `sphinx.ext.autodoc` (directly, or via
 something that depends on it, e.g. numpydoc).
 
 **Grouping by category.** `AutoCodeLinkScraper` tags every page it records `'Sphinx Gallery'` by
