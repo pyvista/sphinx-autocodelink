@@ -93,6 +93,10 @@ included, when there's nothing to show, instead of printing "No references found
    :hide-empty:
 ```
 
+Referencing pages show their real title by default (read straight from Sphinx's own tracked
+document titles, so it never drifts from what the page actually says), not their docname. Add
+`:no-titles:` to show docnames instead.
+
 Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used in"
 section -- to every autodoc-documented object's own docstring automatically, via
 ``autodoc-process-docstring``. Off by default; requires ``sphinx.ext.autodoc`` (directly, or via

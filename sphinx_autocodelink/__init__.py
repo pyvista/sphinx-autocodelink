@@ -697,7 +697,7 @@ def _render_index_html(
     external: dict[str, str],
     categories: dict[str, str],
     hide_empty: bool = False,
-    show_titles: bool = False,
+    show_titles: bool = True,
     group_mode: str = 'auto',
 ) -> str:
     """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
@@ -738,7 +738,7 @@ def _render_full_index(
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
     categories: dict[str, str],
-    show_titles: bool = False,
+    show_titles: bool = True,
     group_mode: str = 'auto',
 ) -> str:
     """Render the site-wide index: every resolved name and its referencing pages."""

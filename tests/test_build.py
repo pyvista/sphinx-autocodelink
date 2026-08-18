@@ -44,6 +44,14 @@ def test_sphinx_gallery_scraper_links_survives_joblib_workers(tmp_path):
         assert 'href="../api.html#pkg.thing"' in example_html
 
 
+def _block_after(html: str, marker: str) -> str:
+    """Return the HTML between one paragraph's ``marker`` text and the next ``<p>`` (or end)."""
+    start = html.index(marker) + len(marker)
+    rest = html[start:]
+    end = rest.index('<p>') if '<p>' in rest else rest.index('</section>')
+    return rest[:end]
+
+
 def test_autocodelink_index(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()
@@ -55,28 +63,38 @@ def test_autocodelink_index(tmp_path):
         assert f'href="{page}"' in dl
 
     # default grouping (2 categories apply to pkg.thing: 'Other' for the directive-recorded
-    # index page, 'Sphinx Gallery' for the scraper-recorded examples).
-    groups = re.findall(
-        r'<div class="sphinx-autocodelink-index-group">'
-        r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>'
-        r'(<ul class="sphinx-autocodelink-index">.*?</ul>)</div>',
-        refs,
-        re.DOTALL,
+    # index page, 'Sphinx Gallery' for the scraper-recorded examples) -- and titles, not
+    # docnames, by default.
+    grouped = _block_after(refs, 'since 2 categories apply):')
+    groups = dict(
+        re.findall(
+            r'<div class="sphinx-autocodelink-index-group">'
+            r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>'
+            r'(<ul class="sphinx-autocodelink-index">.*?</ul>)</div>',
+            grouped,
+            re.DOTALL,
+        )
     )
-    by_label = dict(groups)
-    assert set(by_label) == {'Other', 'Sphinx Gallery'}
-    assert 'href="index.html"' in by_label['Other']
-    for page in ('auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
-        assert f'href="{page}"' in by_label['Sphinx Gallery']
+    assert set(groups) == {'Other', 'Sphinx Gallery'}
+    assert '<a href="index.html">Index</a>' in groups['Other']
+    assert (
+        '<a href="auto_examples/plot_thing.html">Plotting a thing</a>' in groups['Sphinx Gallery']
+    )
+    assert (
+        '<a href="auto_examples/plot_other.html">Plotting another thing</a>'
+        in groups['Sphinx Gallery']
+    )
 
-    # :group: never forces one flat list despite the same 2 categories applying: the ungrouped
-    # <ul> that follows the grouped <div>s, before the next paragraph.
-    after_groups = refs.split('</div><p>', 1)[1]
-    forced_flat = re.search(r'<ul class="sphinx-autocodelink-index">.*?</ul>', after_groups)
-    assert forced_flat is not None
-    assert 'sphinx-autocodelink-index-group' not in forced_flat.group()
-    for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
-        assert f'href="{page}"' in forced_flat.group()
+    # :group: never forces one flat list despite the same 2 categories applying.
+    forced_flat = _block_after(refs, 'forced flat despite 2 categories applying:')
+    assert 'sphinx-autocodelink-index-group' not in forced_flat
+    assert '<a href="index.html">Index</a>' in forced_flat
+    assert '<a href="auto_examples/plot_thing.html">Plotting a thing</a>' in forced_flat
+
+    # :no-titles: shows docnames instead.
+    no_titles = _block_after(refs, 'docnames instead of titles:')
+    assert '<a href="index.html">index</a>' in no_titles
+    assert '<a href="auto_examples/plot_thing.html">auto_examples/plot_thing</a>' in no_titles
 
     # filtered index for a name with no references.
     assert 'No references found.' in refs
@@ -94,6 +112,7 @@ def test_autodoc_backrefs(tmp_path):
     assert '<h2>Used in' in section.group()
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in section.group()
+    assert '<a href="index.html">Index</a>' in section.group()  # titles, not docnames
 
     # pkg.unused has no references: nothing appended at all, not even "No references found."
     unused_dd = re.search(r'id="pkg\.unused">.*?</dd>', api, re.DOTALL).group()

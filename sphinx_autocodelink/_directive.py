@@ -83,6 +83,11 @@ class AutoCodeLinkIndex(Directive):
         when more than one category is actually present for a given
         entry; a single category (or none at all) renders as today's
         flat list either way.
+
+    :no-titles: shows each referencing page's own docname instead of its
+        title. Titles are on by default: they're read straight from
+        Sphinx's own tracked document titles, so there's no extra cost
+        and no risk of drifting from what the page actually says.
     """
 
     has_content = False
@@ -93,6 +98,7 @@ class AutoCodeLinkIndex(Directive):
         'label': directives.unchanged,
         'hide-empty': directives.flag,
         'group': _group_choice,
+        'no-titles': directives.flag,
     }
 
     def run(self) -> list[nodes.Node]:
@@ -104,7 +110,7 @@ class AutoCodeLinkIndex(Directive):
             'name': self.arguments[0] if self.arguments else '',
             'hide_empty': 'hide-empty' in self.options,
             'group': self.options.get('group', 'auto'),
-            'titles': False,
+            'titles': 'no-titles' not in self.options,
         }
         raw = (
             f'<div class="sphinx-autocodelink-index" data-opts="{escape(json.dumps(opts))}"></div>'

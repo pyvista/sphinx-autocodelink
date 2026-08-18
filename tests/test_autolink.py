@@ -682,6 +682,18 @@ def test_render_full_index_empty():
     assert result == ''
 
 
+def test_docname_title_present():
+    app = SimpleNamespace(
+        env=SimpleNamespace(titles={'index': SimpleNamespace(astext=lambda: 'Index')})
+    )
+    assert autolink._docname_title(app, 'index') == 'Index'
+
+
+def test_docname_title_missing_falls_back_to_docname():
+    app = SimpleNamespace(env=SimpleNamespace(titles={}))
+    assert autolink._docname_title(app, 'index') == 'index'
+
+
 def test_render_index_entry_excludes_self_reference(tmp_path):
     # a docstring's own Examples section calling the very thing it documents
     # is not a genuine cross-reference to itself.
