@@ -534,6 +534,51 @@ def test_render_ref_list_collapses_past_the_threshold():
     assert before_details.count('<li>') == autolink._COLLAPSE_VISIBLE
 
 
+def test_strip_nav_links_to_removes_matching_li():
+    html = (
+        '<ul><li class="toc-h2"><a class="nav-link" href="#autocodelink-backrefs-pkg-thing">'
+        'Used In</a></li><li class="toc-h2"><a href="#other">Other</a></li></ul>'
+    )
+    result = autolink._strip_nav_links_to(html, {'autocodelink-backrefs-pkg-thing'})
+    assert 'Used In' not in result
+    assert '<a href="#other">Other</a>' in result
+
+
+def test_strip_nav_links_to_ignores_unrelated_ids():
+    html = '<li><a href="#unrelated">Unrelated</a></li>'
+    assert autolink._strip_nav_links_to(html, {'autocodelink-backrefs-pkg-thing'}) == html
+
+
+def test_fill_index_placeholders_drops_dangling_nav_link_for_hidden_section(tmp_path):
+    # Mimics a theme (e.g. pydata-sphinx-theme) that bakes an "on this page" nav from the
+    # doctree before :hide-empty: drops the body section -- the nav link must go too.
+    html = (
+        '<html><body>'
+        '<nav><ul><li class="toc-h2 nav-item toc-entry">'
+        '<a class="reference internal nav-link" href="#autocodelink-backrefs-pkg-unused">'
+        'Used In</a></li></ul></nav>'
+        '<section class="sphinx-autocodelink-backrefs" id="autocodelink-backrefs-pkg-unused">'
+        '<h2>Used In</h2>'
+        '<div class="sphinx-autocodelink-index" data-opts="'
+        '{&quot;name&quot;: &quot;pkg.unused&quot;, &quot;hide_empty&quot;: true, '
+        '&quot;titles&quot;: true, &quot;group&quot;: &quot;auto&quot;}"></div>'
+        '</section>'
+        '</body></html>'
+    )
+    out_file = tmp_path / 'api.html'
+    out_file.write_text(html, encoding='utf-8')
+
+    app = SimpleNamespace(
+        outdir=str(tmp_path),
+        builder=SimpleNamespace(get_target_uri=lambda docname: f'{docname}.html'),
+    )
+    autolink._fill_index_placeholders(app, {'api'}, {}, local={}, external={}, categories={})
+
+    result = out_file.read_text(encoding='utf-8')
+    assert 'sphinx-autocodelink-backrefs' not in result
+    assert 'Used In' not in result
+
+
 def test_embed_links_skips_on_exception():
     app = SimpleNamespace(builder=SimpleNamespace(format='html'))
     assert autolink._embed_links(app, Exception('build failed')) is None

@@ -667,6 +667,10 @@ _BACKREFS_SECTION_RE = re.compile(
     re.DOTALL,
 )
 
+#: Pulls a section's own ``id`` out of its opening tag, so a dropped ``:hide-empty:`` section
+#: can also be found (and removed) in the page's separately-rendered in-page nav.
+_SECTION_ID_RE = re.compile(r'\bid="([^"]*)"')
+
 
 def _index_entry_link(
     name: str,
@@ -861,6 +865,22 @@ def _render_full_index(
     return f'<dl class="sphinx-autocodelink-index">{"".join(entries)}</dl>'
 
 
+def _strip_nav_links_to(html: str, removed_ids: set[str]) -> str:
+    """Remove a page's in-page nav entries pointing at ``removed_ids`` sections.
+
+    Themes render their "on this page" nav from the doctree before ``:hide-empty:`` drops a
+    section, so a dropped section otherwise leaves a dangling nav link behind.
+    """
+    for anchor_id in removed_ids:
+        html = re.sub(
+            rf'<li\b[^>]*>\s*<a\b[^>]*\bhref="#{re.escape(anchor_id)}"[^>]*>.*?</a>\s*</li>',
+            '',
+            html,
+            flags=re.DOTALL,
+        )
+    return html
+
+
 def _fill_index_placeholders(
     app: Sphinx,
     index_docs: set[str],
@@ -887,7 +907,7 @@ def _fill_index_placeholders(
             group_mode=opts['group'],
         )
 
-    def _render_section(match: re.Match[str], docname: str) -> str:
+    def _render_section(match: re.Match[str], docname: str, removed_ids: set[str]) -> str:
         section_html = match.group(0)
         placeholder = _INDEX_PLACEHOLDER_RE.search(section_html)
         if placeholder is None:  # defensive: no placeholder inside, leave untouched
@@ -895,6 +915,10 @@ def _fill_index_placeholders(
         opts = json.loads(unescape(placeholder.group(1)))
         rendered = _render_placeholder(placeholder, docname)
         if not rendered and opts['hide_empty']:
+            open_tag = section_html[: section_html.index('>') + 1]
+            id_match = _SECTION_ID_RE.search(open_tag)
+            if id_match is not None:
+                removed_ids.add(id_match.group(1))
             return ''  # :hide-empty: and nothing to show -- drop the heading too
         return section_html[: placeholder.start()] + rendered + section_html[placeholder.end() :]
 
@@ -903,9 +927,18 @@ def _fill_index_placeholders(
         if not out_file.exists():
             continue
         html = out_file.read_text(encoding='utf-8')
+        removed_ids: set[str] = set()
+
+        def _render_section_bound(
+            match: re.Match[str], docname: str = docname, removed_ids: set[str] = removed_ids
+        ) -> str:
+            """Bind ``docname`` and this iteration's ``removed_ids`` for the ``sub`` callback."""
+            return _render_section(match, docname, removed_ids)
+
         # :label: sections first, as one atomic unit; then any plain, unlabeled placeholders.
-        html = _BACKREFS_SECTION_RE.sub(lambda m, d=docname: _render_section(m, d), html)
+        html = _BACKREFS_SECTION_RE.sub(_render_section_bound, html)
         html = _INDEX_PLACEHOLDER_RE.sub(lambda m, d=docname: _render_placeholder(m, d), html)
+        html = _strip_nav_links_to(html, removed_ids)
         out_file.write_text(html, encoding='utf-8')
 
 
