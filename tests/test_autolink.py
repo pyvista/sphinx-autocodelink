@@ -814,7 +814,7 @@ def test_inject_backref_index_appends_directive():
     autolink._inject_backref_index(None, 'function', 'pkg.thing', None, {}, lines)
     assert lines[-3:] == [
         '.. autocodelink-index:: pkg.thing',
-        '   :label: Used in',
+        '   :label: Used In',
         '   :hide-empty:',
     ]
 

@@ -94,14 +94,14 @@ included, when there's nothing to show, instead of printing "No references found
 
 ```rst
 .. autocodelink-index:: pkg.thing
-   :label: Used in
+   :label: Used In
    :hide-empty:
 ```
 
 Referencing pages show their real title by default (read straight from Sphinx's own tracked
 document titles), not their docname. Add `:no-titles:` to show docnames instead.
 
-Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used in"
+Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used In"
 section -- to every autodoc-documented object's own docstring automatically, via
 `autodoc-process-docstring`. Off by default; requires `sphinx.ext.autodoc` (directly, or via
 something that depends on it, e.g. numpydoc).

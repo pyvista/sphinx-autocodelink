@@ -140,7 +140,7 @@ def test_autodoc_backrefs(tmp_path):
         r'<section class="sphinx-autocodelink-backrefs"[^>]*>.*?</section>', api, re.DOTALL
     )
     assert section is not None
-    assert '<h2>Used in' in section.group()
+    assert '<h2>Used In' in section.group()
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in section.group()
     assert '<a href="index.html">Index</a>' in section.group()  # titles, not docnames

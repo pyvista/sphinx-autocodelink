@@ -636,7 +636,7 @@ _INDEX_PLACEHOLDER_RE = re.compile(
 
 #: Matches a ``:label:``-generated section (title + one placeholder), for the ``:hide-empty:``
 #: case: removed as a whole -- title included -- rather than just its placeholder, so an
-#: auto-injected "Used in" heading never sits over nothing. Assumes no directive nests
+#: auto-injected "Used In" heading never sits over nothing. Assumes no directive nests
 #: another section inside it, which none of ours do.
 _BACKREFS_SECTION_RE = re.compile(
     r'<section\b[^>]*\bclass="[^"]*sphinx-autocodelink-backrefs[^"]*"[^>]*>.*?</section>',
@@ -871,7 +871,7 @@ def _inject_backref_index(
         return
     lines.append('')
     lines.append(f'.. autocodelink-index:: {name}')
-    lines.append('   :label: Used in')
+    lines.append('   :label: Used In')
     lines.append('   :hide-empty:')
 
 
