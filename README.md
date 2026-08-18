@@ -91,8 +91,28 @@ Pass a documented dotted name to show just its own references -- handy on that n
 ### Library use
 
 A consumer that already executes example code for its own purposes (e.g. to render a figure) can
-call `record_namespace()` directly with the resulting namespace, then call `sphinx_autocodelink.setup()`
-from its own `setup(app)` to wire up link embedding.
+skip the directive and `AutoCodeLinkScraper` entirely, and call `record_namespace()` directly with
+the resulting namespace. For example, [pyvista's `pyvista-plot` directive](https://github.com/pyvista/pyvista/blob/main/pyvista/ext/plot_directive.py)
+already builds its own namespace via `exec(code, ns)` to render a figure; adding autolinking is one
+extra call after that:
+
+```python
+from sphinx_autocodelink import record_namespace
+
+record_namespace(env=env, docname=env.docname, source=code, namespace=ns)
+```
+
+Then, from the consumer's own `setup(app)`, depend on this extension with `app.setup_extension(...)`
+rather than calling `sphinx_autocodelink.setup()` directly -- `setup_extension` is a no-op if the
+user's own `conf.py` already lists `sphinx_autocodelink` in `extensions`, so link embedding gets
+wired up exactly once either way:
+
+```python
+def setup(app):
+    app.setup_extension('sphinx_autocodelink')
+    app.add_directive('pyvista-plot', PlotDirective)
+    ...
+```
 
 ## Development
 
