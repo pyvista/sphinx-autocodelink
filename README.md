@@ -51,7 +51,7 @@ running anything itself. Add `AutoCodeLinkScraper` alongside your real image scr
 from sphinx_autocodelink.gallery import AutoCodeLinkScraper
 
 sphinx_gallery_conf = {
-    'image_scrapers': (AutoCodeLinkScraper(), 'matplotlib'),
+    'image_scrapers': (AutoCodeLinkScraper(), ...),  # ... = your other scraper(s), if any
 }
 ```
 
