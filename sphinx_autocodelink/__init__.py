@@ -652,7 +652,11 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.connect('builder-inited', _clear_disk_records)
     app.connect('env-merge-info', _merge_records)
     app.connect('env-purge-doc', _purge_doc)
-    app.connect('build-finished', _embed_links)
+    # Priority > 500 (Sphinx's default): run after other build-finished handlers, e.g.
+    # Sphinx-Gallery's own `reference_url`-driven link embedding, which does not check
+    # for spans already inside an anchor -- running after it lets our own such check
+    # (which does) skip whatever it already wrapped, instead of nesting inside it.
+    app.connect('build-finished', _embed_links, priority=900)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)

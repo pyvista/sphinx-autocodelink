@@ -59,19 +59,13 @@ Sphinx-Gallery's own `parallel=True` mode runs each example in a separate worker
 Sphinx's usual mechanism for merging data back into the main build. `AutoCodeLinkScraper` writes its
 records to disk instead, so they survive regardless.
 
-**Drop any module from `sphinx_gallery_conf['reference_url']` once you add `AutoCodeLinkScraper` for
-it.** `reference_url` is Sphinx-Gallery's own, older code-linking mechanism, and it isn't aware of
-this extension: both wrap the same `<span>` code identifiers, and Sphinx-Gallery's own embedder
-doesn't check whether a match is already inside a link. Leaving `reference_url` configured for the
-same module produces broken, nested `<a>` tags:
-
-```html
-<a class="sphinx-autocodelink-a" href="..."><a href="..." class="sphx-glr-backref-...">...
-```
-
-Use `intersphinx_mapping` instead, which this extension already reads -- it covers every page, not
-just gallery pages, and Sphinx-Gallery's own `reference_url = None` (local resolution) is redundant
-with it anyway.
+If `sphinx_gallery_conf['reference_url']` is also configured for a module `AutoCodeLinkScraper`
+covers too, both will try to link the same identifiers. This extension runs its own embedding after
+Sphinx-Gallery's, and skips anything already inside a link -- so the two don't produce broken,
+nested `<a>` tags, but Sphinx-Gallery's own (usually less precise, since it's static analysis rather
+than the real executed object) link wins wherever both would apply. Prefer `intersphinx_mapping`
+over `reference_url`, which this extension already reads and which covers every page, not just
+gallery pages -- then there's nothing to fall back to it for.
 
 ### Backreferences index
 

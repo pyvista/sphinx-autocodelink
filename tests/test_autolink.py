@@ -340,12 +340,14 @@ def test_purge_doc():
 
 def test_setup():
     connected = {}
+    priorities = {}
     config_values = {}
     directives = {}
 
     class FakeApp:
-        def connect(self, event, handler):
+        def connect(self, event, handler, priority=500):
             connected[event] = handler
+            priorities[event] = priority
 
         def add_config_value(self, name, default, rebuild):
             config_values[name] = (default, rebuild)
@@ -360,6 +362,9 @@ def test_setup():
         'env-purge-doc': autolink._purge_doc,
         'build-finished': autolink._embed_links,
     }
+    # runs after other build-finished handlers at Sphinx's default priority (500) -- see
+    # setup()'s docstring for why (Sphinx-Gallery's reference_url embedding, notably).
+    assert priorities['build-finished'] == 900
     assert config_values == {'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html')}
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}
