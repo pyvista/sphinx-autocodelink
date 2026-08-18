@@ -9,6 +9,8 @@ separate joblib worker processes that never go through Sphinx's own
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
@@ -32,6 +34,33 @@ _logger = logging.getLogger(__name__)
 #: Sphinx-Gallery calls them in that exact order for one block before moving to the next, even
 #: under `parallel=True` (a separate worker process per example, so no cross-example clash).
 _LAST_TRACED_LOCALS: dict[str, Any] = {}
+
+
+@dataclass
+class _PendingExample:
+    """One example's blocks and everything seen anywhere in it so far, up to this point.
+
+    A helper function's own body -- defined in one block, only actually *called* from a
+    later one -- can only be resolved against a namespace that has everything any of the
+    example's blocks bound, not just whichever block happened to trigger that particular
+    call. So every block gets re-recorded (see `AutoCodeLinkScraper.__call__`) against
+    the fullest namespace seen *so far*, each time a new block comes in for the same
+    example -- rather than deferred to some "this example is finished" signal, which
+    a joblib worker process (Sphinx-Gallery's `parallel=True`) may never reliably fire
+    before the disk records need to already be there.
+    """
+
+    directory: Path
+    docname: str
+    category: str
+    blocks: list[str] = field(default_factory=list)
+    namespace: dict[str, Any] = field(default_factory=dict)
+
+
+#: The one example currently being scraped in this process, or ``None`` between examples.
+#: Sphinx-Gallery scrapes one example's blocks strictly in order before moving to the next,
+#: even under `parallel=True` (a separate worker process per example), so one slot suffices.
+_PENDING: _PendingExample | None = None
 
 
 class AutoCodeLinkScraper:
@@ -70,24 +99,40 @@ class AutoCodeLinkScraper:
         self.trace_locals = trace_locals
 
     def __call__(self, block: Any, block_vars: dict[str, Any], gallery_conf: dict[str, Any]) -> str:
-        """Record this block's identifiers. Called by Sphinx-Gallery; returns no image."""
+        """Re-record this example's every block so far, namespace included; no image."""
         docname = (
             Path(block_vars['target_file'])
             .relative_to(gallery_conf['src_dir'])
             .with_suffix('')
             .as_posix()
         )
-        namespace = block_vars['example_globals']
+
+        global _PENDING
+        if _PENDING is None or _PENDING.docname != docname:
+            _PENDING = _PendingExample(
+                directory=Path(gallery_conf['src_dir']) / self.records_dir,
+                docname=docname,
+                category=self.category,
+            )
+
+        # `example_globals` only grows across an example's own blocks, so re-merging it
+        # every call keeps the latest snapshot without needing its own end-of-example signal.
+        _PENDING.namespace.update(block_vars['example_globals'])
         if self.trace_locals and _LAST_TRACED_LOCALS:
-            namespace = {**_LAST_TRACED_LOCALS, **namespace}
+            _PENDING.namespace.update(_LAST_TRACED_LOCALS)
             _LAST_TRACED_LOCALS.clear()
-        record_namespace_to_disk(
-            directory=Path(gallery_conf['src_dir']) / self.records_dir,
-            docname=docname,
-            source=block.content,
-            namespace=namespace,
-            category=self.category,
-        )
+        _PENDING.blocks.append(block.content)
+
+        target = _PENDING.directory / f'{docname}.json'
+        target.unlink(missing_ok=True)
+        for source in _PENDING.blocks:
+            record_namespace_to_disk(
+                directory=_PENDING.directory,
+                docname=docname,
+                source=source,
+                namespace=_PENDING.namespace,
+                category=_PENDING.category,
+            )
         return ''
 
 
