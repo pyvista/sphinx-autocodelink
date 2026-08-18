@@ -901,6 +901,15 @@ def _register_autodoc_hook(app: Sphinx) -> None:
 #: defaults mean disk-based recording works without configuring either explicitly.
 DEFAULT_RECORDS_DIR = '_autocodelink_records'
 
+#: Suggested ``category`` (see :func:`record_namespace`) for a third-party extension that
+#: executes a docstring's own Examples section and calls :func:`record_namespace` itself
+#: -- e.g. a Matplotlib/PyVista-style ``.. plot::`` directive. Mirrors
+#: :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s own ``category`` default
+#: (``'Sphinx Gallery'``) for the equivalent Sphinx-Gallery integration, so such an
+#: extension's own users see a consistent, recognizable set of categories out of the box
+#: without every extension independently choosing (and hardcoding) its own label.
+DEFAULT_EXAMPLE_CATEGORY = 'Autodoc'
+
 
 def setup(app: Sphinx) -> dict[str, bool]:
     """Wire up dynamic autolinking.
