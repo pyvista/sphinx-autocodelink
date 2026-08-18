@@ -425,20 +425,16 @@ def test_setup():
             directives[name] = directive
 
     result = autolink.setup(FakeApp())
-    from sphinx_autocodelink.gallery import _install_gallery_tracing
 
     assert connected == {
         'builder-inited': [autolink._clear_disk_records, autolink._register_autodoc_hook],
         'env-merge-info': [autolink._merge_records],
         'env-purge-doc': [autolink._purge_doc],
         'build-finished': [autolink._embed_links],
-        'config-inited': [_install_gallery_tracing],
     }
     # runs after other build-finished handlers at Sphinx's default priority (500) -- see
     # setup()'s docstring for why (Sphinx-Gallery's reference_url embedding, notably).
     assert priorities[('build-finished', autolink._embed_links)] == 900
-    # after Sphinx-Gallery's own fill_gallery_conf_defaults (priority 10).
-    assert priorities[('config-inited', _install_gallery_tracing)] == 20
     assert config_values == {
         'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
         'autocodelink_autodoc_backrefs': (False, 'html'),

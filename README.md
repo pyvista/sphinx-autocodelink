@@ -59,20 +59,13 @@ Sphinx-Gallery's own `parallel=True` mode runs each example in a separate worker
 Sphinx's usual mechanism for merging data back into the main build. `AutoCodeLinkScraper` writes its
 records to disk instead, so they survive regardless.
 
-`AutoCodeLinkScraper` also resolves identifiers local to an example's own helper functions by
-default (`trace_locals=True`; see [Resolving identifiers local to a helper
-function](#resolving-identifiers-local-to-a-helper-function)), by taking over
-`sphinx_gallery_conf['show_memory']` -- but only if nothing else has already claimed it for its own
-purpose (e.g. real memory profiling). If it has, `AutoCodeLinkScraper` backs off and logs a warning;
-compose the two yourself with `sphinx_autocodelink.gallery.trace_call_memory()`:
-
-```python
-from sphinx_autocodelink.gallery import trace_call_memory
-
-sphinx_gallery_conf = {
-    'show_memory': trace_call_memory(my_own_show_memory),
-}
-```
+Only resolves identifiers in an example's own top-level (module) scope -- a root identifier that
+only ever exists inside one of the example's own helper functions isn't resolvable here (unlike the
+standalone `.. autocodelink::` directive; see [Resolving identifiers local to a helper
+function](#resolving-identifiers-local-to-a-helper-function)). An earlier version of
+`AutoCodeLinkScraper` traced Sphinx-Gallery's own example execution to resolve those too, but tracing
+every function call across every example, on every parallel worker, for the whole gallery build
+turned out to be a real stability risk relative to the benefit -- removed.
 
 If `sphinx_gallery_conf['reference_url']` is also configured for a module `AutoCodeLinkScraper`
 covers too, both will try to link the same identifiers. This extension runs its own embedding after

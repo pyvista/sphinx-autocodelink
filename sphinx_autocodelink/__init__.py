@@ -928,11 +928,6 @@ def setup(app: Sphinx) -> dict[str, bool]:
     docstring, via ``autodoc-process-docstring``. Objects with no
     references get nothing appended, not an empty "No references found."
 
-    :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper` resolves
-    identifiers local to an example's own helper functions by default too
-    (``trace_locals=True``), by taking over Sphinx-Gallery's own
-    ``show_memory`` -- only when nothing else has already claimed it.
-
     ``autocodelink_category_labels`` (default ``{}``) renames a recorded
     category's own display label in grouped ``.. autocodelink-index::``
     output, e.g. ``{'Sphinx Gallery': 'Gallery Examples'}`` -- without
@@ -945,7 +940,6 @@ def setup(app: Sphinx) -> dict[str, bool]:
     """
     from sphinx_autocodelink._directive import AutoCodeLink
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
-    from sphinx_autocodelink.gallery import _install_gallery_tracing
 
     app.connect('builder-inited', _clear_disk_records)
     app.connect('env-merge-info', _merge_records)
@@ -956,8 +950,6 @@ def setup(app: Sphinx) -> dict[str, bool]:
     # (which does) skip whatever it already wrapped, instead of nesting inside it.
     app.connect('build-finished', _embed_links, priority=900)
     app.connect('builder-inited', _register_autodoc_hook)
-    # priority 20: after Sphinx-Gallery's own fill_gallery_conf_defaults (priority 10).
-    app.connect('config-inited', _install_gallery_tracing, priority=20)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
