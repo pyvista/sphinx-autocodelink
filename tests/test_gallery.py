@@ -41,30 +41,34 @@ def test_scraper_merges_traced_locals(tmp_path):
     assert sg_gallery._LAST_TRACED_LOCALS == {}
 
 
+def _exec_callable(code: str, filename: str = '<test-example>'):
+    """Build a callable that ``exec()``s ``code`` -- Sphinx-Gallery's ``show_memory`` contract."""
+    compiled = compile(code, filename, 'exec')
+    namespace: dict = {}
+
+    def _run():
+        exec(compiled, namespace)  # noqa: S102 -- test-controlled code
+
+    return _run
+
+
 def test_trace_call_captures_locals_and_returns_result():
-    def helper():
-        local = 42
-        return local  # noqa: RET504 -- must exist as a real local for tracing to capture
+    code = 'def helper():\n    local = 42\n    return local\nresult = helper()\n'
 
-    def target():
-        return helper()
+    captured, result = sg_gallery._trace_call(_exec_callable(code))
 
-    captured, result = sg_gallery._trace_call(target)
     assert captured['local'] == 42
-    assert result == 42
+    assert result is None  # func() itself returns nothing, matching _exec_once
 
 
 def test_call_memory_with_tracing_matches_sphinx_gallery_contract():
     sg_gallery._LAST_TRACED_LOCALS.clear()
+    code = "def helper():\n    local = 'value'\n    return local\nhelper()\n"
 
-    def func():
-        local = 'value'
-        return local  # noqa: RET504 -- must exist as a real local for tracing to capture
-
-    mem_max, result = sg_gallery._call_memory_with_tracing(func)
+    mem_max, result = sg_gallery._call_memory_with_tracing(_exec_callable(code))
 
     assert mem_max == 0.0
-    assert result == 'value'
+    assert result is None
     assert sg_gallery._LAST_TRACED_LOCALS['local'] == 'value'
 
 
@@ -77,16 +81,13 @@ def test_trace_call_memory_composes_with_existing_show_memory():
         return 1.5, func()
 
     wrapped = sg_gallery.trace_call_memory(my_show_memory)
+    code = "def helper():\n    local = 'traced'\n    return local\nhelper()\n"
 
-    def func():
-        local = 'traced'
-        return local  # noqa: RET504 -- must exist as a real local for tracing to capture
-
-    mem_max, result = wrapped(func)
+    mem_max, result = wrapped(_exec_callable(code))
 
     assert calls == ['called']
     assert mem_max == 1.5
-    assert result == 'traced'
+    assert result is None
     assert sg_gallery._LAST_TRACED_LOCALS['local'] == 'traced'
 
 

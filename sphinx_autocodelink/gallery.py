@@ -96,14 +96,22 @@ def _trace_call(func: Callable[[], Any]) -> tuple[dict[str, Any], Any]:
 
     Uses ``sys.setprofile()`` rather than ``sys.settrace()`` -- see
     :func:`sphinx_autocodelink.exec_with_local_scopes` for why.
+
+    Only captures frames from ``func()``'s own top-level module (its first ``'<module>'``
+    frame, since ``func`` is opaque and carries no filename to filter on upfront) --
+    otherwise every return anywhere in the process, library internals included, gets
+    merged in, holding unrelated namespaces (and heavy objects in them) alive too long.
     """
     captured: dict[str, Any] = {}
     old_profile = sys.getprofile()
+    module_filename: list[str] = []
 
     def _profiler(frame: Any, event: str, arg: Any) -> None:
         if old_profile is not None:
             old_profile(frame, event, arg)
-        if event == 'return':
+        if event == 'call' and frame.f_code.co_name == '<module>' and not module_filename:
+            module_filename.append(frame.f_code.co_filename)
+        if event == 'return' and module_filename and frame.f_code.co_filename == module_filename[0]:
             captured.update(frame.f_locals)
 
     sys.setprofile(_profiler)
