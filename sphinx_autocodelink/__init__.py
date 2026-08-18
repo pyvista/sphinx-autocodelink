@@ -46,8 +46,12 @@ _INDEX_DOCS_ATTR = 'sphinx_autocodelink_index_docs'
 #: for grouping backreferences by where they came from. Untagged docnames have no entry.
 _CATEGORY_ATTR = 'sphinx_autocodelink_categories'
 
-#: Display label for a referencing page with no recorded category.
-_UNCATEGORIZED_LABEL = 'Other'
+#: Display label for a referencing page with no recorded category -- i.e. everything
+#: that isn't :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s own Sphinx-Gallery
+#: integration: the standalone ``.. autocodelink::`` directive used bare, or a third-party
+#: extension calling :func:`record_namespace` directly (e.g. a ``.. plot::``-style
+#: directive executing a docstring's own Examples section).
+_UNCATEGORIZED_LABEL = 'Documentation'
 
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
@@ -365,8 +369,8 @@ def record_namespace(
     """Record candidate documented names for every identifier in ``source``.
 
     ``category`` optionally tags where this recording came from (e.g. ``'Sphinx
-    Gallery'``, ``'Docstring examples'``), for grouping in ``.. autocodelink-index::``
-    output. Untagged pages display under a generic "Other" bucket when grouped.
+    Gallery'``), for grouping in ``.. autocodelink-index::`` output. Untagged pages
+    display under a generic "Documentation" bucket when grouped.
     """
     all_records: dict[str, list[_Candidate | _CallCandidate]] | None = getattr(env, _ENV_ATTR, None)
     if all_records is None:
@@ -701,10 +705,12 @@ def _render_grouped_refs(
     if not should_group:
         return _render_ref_list(refs, docname=docname, app=app, show_titles=show_titles)
 
+    category_labels = getattr(app.config, 'autocodelink_category_labels', {})
     parts = []
-    for label in sorted(groups):
+    for category in sorted(groups):
+        label = category_labels.get(category, category)
         ref_list = _render_ref_list(
-            groups[label], docname=docname, app=app, show_titles=show_titles
+            groups[category], docname=docname, app=app, show_titles=show_titles
         )
         parts.append(
             '<div class="sphinx-autocodelink-index-group">'
@@ -901,15 +907,6 @@ def _register_autodoc_hook(app: Sphinx) -> None:
 #: defaults mean disk-based recording works without configuring either explicitly.
 DEFAULT_RECORDS_DIR = '_autocodelink_records'
 
-#: Suggested ``category`` (see :func:`record_namespace`) for a third-party extension that
-#: executes a docstring's own Examples section and calls :func:`record_namespace` itself
-#: -- e.g. a Matplotlib/PyVista-style ``.. plot::`` directive. Mirrors
-#: :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s own ``category`` default
-#: (``'Sphinx Gallery'``) for the equivalent Sphinx-Gallery integration, so such an
-#: extension's own users see a consistent, recognizable set of categories out of the box
-#: without every extension independently choosing (and hardcoding) its own label.
-DEFAULT_EXAMPLE_CATEGORY = 'Autodoc'
-
 
 def setup(app: Sphinx) -> dict[str, bool]:
     """Wire up dynamic autolinking.
@@ -935,6 +932,16 @@ def setup(app: Sphinx) -> dict[str, bool]:
     identifiers local to an example's own helper functions by default too
     (``trace_locals=True``), by taking over Sphinx-Gallery's own
     ``show_memory`` -- only when nothing else has already claimed it.
+
+    ``autocodelink_category_labels`` (default ``{}``) renames a recorded
+    category's own display label in grouped ``.. autocodelink-index::``
+    output, e.g. ``{'Sphinx Gallery': 'Gallery Examples'}`` -- without
+    changing the category string itself, which is what ``:category:``,
+    :class:`~sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s own
+    ``category``, and :func:`record_namespace` calls are actually matched
+    and grouped by. A category with no entry displays under its own name
+    unchanged; that includes ``'Documentation'``, the default for anything
+    recorded with no category at all.
     """
     from sphinx_autocodelink._directive import AutoCodeLink
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
@@ -953,6 +960,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.connect('config-inited', _install_gallery_tracing, priority=20)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
+    app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}

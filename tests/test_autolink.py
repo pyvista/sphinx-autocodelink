@@ -442,6 +442,7 @@ def test_setup():
     assert config_values == {
         'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
         'autocodelink_autodoc_backrefs': (False, 'html'),
+        'autocodelink_category_labels': ({}, 'html'),
     }
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}

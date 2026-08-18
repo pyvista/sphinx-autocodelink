@@ -11,7 +11,7 @@ from sphinx.application import Sphinx
 TINYPAGES = Path(__file__).parent / 'tinypages'
 
 
-def _build(tmp_path, *, parallel=1):
+def _build(tmp_path, *, parallel=1, confoverrides=None):
     """Build a fresh copy of the tinypages fixture; return the outdir and index.html text."""
     srcdir = tmp_path / 'src'
     shutil.copytree(TINYPAGES, srcdir)
@@ -24,6 +24,7 @@ def _build(tmp_path, *, parallel=1):
         doctreedir=str(doctreedir),
         buildername='html',
         parallel=parallel,
+        confoverrides=confoverrides,
     )
     app.build()
     return outdir, (outdir / 'index.html').read_text()
@@ -99,9 +100,9 @@ def test_autocodelink_index(tmp_path):
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in dl
 
-    # default grouping (2 categories apply to pkg.thing: 'Other' for the directive-recorded
-    # index page, 'Sphinx Gallery' for the scraper-recorded examples) -- and titles, not
-    # docnames, by default.
+    # default grouping (2 categories apply to pkg.thing: 'Documentation' for the
+    # directive-recorded index page, 'Sphinx Gallery' for the scraper-recorded examples)
+    # -- and titles, not docnames, by default.
     grouped = _block_after(refs, 'since 2 categories apply):')
     groups = dict(
         re.findall(
@@ -112,8 +113,8 @@ def test_autocodelink_index(tmp_path):
             re.DOTALL,
         )
     )
-    assert set(groups) == {'Other', 'Sphinx Gallery'}
-    assert '<a href="index.html">Index</a>' in groups['Other']
+    assert set(groups) == {'Documentation', 'Sphinx Gallery'}
+    assert '<a href="index.html">Index</a>' in groups['Documentation']
     assert (
         '<a href="auto_examples/plot_thing.html">Plotting a thing</a>' in groups['Sphinx Gallery']
     )
@@ -135,6 +136,25 @@ def test_autocodelink_index(tmp_path):
 
     # filtered index for a name with no references.
     assert 'No references found.' in refs
+
+
+def test_autocodelink_category_labels_renames_group_headings(tmp_path):
+    # renames the *display* label only -- grouping itself still goes by the real,
+    # unrenamed category, so this must still land the exact same 2 groups as the
+    # default-labels case above.
+    outdir, _ = _build(
+        tmp_path,
+        confoverrides={
+            'autocodelink_category_labels': {
+                'Sphinx Gallery': 'Gallery Examples',
+                'Documentation': 'API Docs',
+            }
+        },
+    )
+    refs = (outdir / 'refs.html').read_text()
+    grouped = _block_after(refs, 'since 2 categories apply):')
+    labels = re.findall(r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>', grouped)
+    assert set(labels) == {'Gallery Examples', 'API Docs'}
 
 
 def test_autodoc_backrefs(tmp_path):

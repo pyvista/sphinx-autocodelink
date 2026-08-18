@@ -29,7 +29,7 @@ class AutoCodeLink(Directive):
 
     :category: tags this page's records for grouping in
         ``.. autocodelink-index::`` output (e.g. ``:category: Tutorials``).
-        Untagged pages display under a generic "Other" bucket when grouped.
+        Untagged pages display under a generic "Documentation" bucket when grouped.
     """
 
     has_content = True
