@@ -24,13 +24,12 @@ extensions = [
 
 ## Usage
 
-`sphinx-autocodelink` is library-only by default: something has to execute code and hand it the
-resulting namespace. Two built-in sources cover most cases, and both are enabled unless you say
-otherwise:
+Links only appear on code you actually run through one of the two mechanisms below. Neither one
+does anything to code you don't feed it -- there's no site-wide "link everything" mode.
 
 ### The `autocodelink` directive
 
-Executes its content and links every identifier it accesses, with no figure or other output:
+Write it wherever you want a code block executed and linked. It only affects that one block:
 
 ```rst
 .. autocodelink::
@@ -39,33 +38,50 @@ Executes its content and links every identifier it accesses, with no figure or o
    pkg.thing()
 ```
 
-Doctest-style content (`>>>`) also works, with prompts stripped before execution.
+No figure or other output is produced, just a syntax-highlighted, linked code block. Doctest-style
+content (`>>>`) also works, with prompts stripped before execution.
+
+The directive is registered by default (so `.. autocodelink::` works out of the box), but you can
+turn it off entirely -- so it errors as an unknown directive if used -- with `autocodelink_sources`
+below.
 
 ### Sphinx-Gallery
 
-Add `Scraper` alongside your real image scraper(s) in `sphinx_gallery_conf`:
+Sphinx-Gallery already executes your example scripts; this hooks into that execution instead of
+running anything itself. Two things are required together:
 
-```python
-from sphinx_autocodelink.gallery import Scraper
+1. Add `Scraper` alongside your real image scraper(s) in `sphinx_gallery_conf` -- this is what
+   makes Sphinx-Gallery hand it each example's namespace as it runs:
 
-sphinx_gallery_conf = {
-    'image_scrapers': (Scraper(), 'matplotlib'),
-}
-```
+   ```python
+   from sphinx_autocodelink.gallery import Scraper
+
+   sphinx_gallery_conf = {
+       'image_scrapers': (Scraper(), 'matplotlib'),
+   }
+   ```
+
+2. Keep `'gallery'` in `autocodelink_sources` (it's there by default) -- this is what makes the
+   recorded links actually get embedded into the built pages.
+
+Without step 1, nothing is ever recorded. Without step 2, `Scraper` still records, but the records
+are never embedded -- useful if you want to turn embedding off without touching `sphinx_gallery_conf`
+(e.g. per build variant, via `conf.py`).
 
 Sphinx-Gallery's own `parallel=True` mode runs each example in a separate worker process, bypassing
 Sphinx's usual mechanism for merging data back into the main build. `Scraper` writes its records to
 disk instead, so they survive regardless.
 
-### Choosing sources
+### `autocodelink_sources`
 
-Both sources are on by default; disable either with `autocodelink_sources` in `conf.py`:
+Controls which of the two mechanisms above are allowed to contribute links, independent of whether
+you've actually used them. Defaults to both:
 
 ```python
-autocodelink_sources = ['gallery']  # or ['directive'], or the default ['directive', 'gallery']
+autocodelink_sources = ['directive', 'gallery']  # the default; also accepts just one
 ```
 
-This only toggles this package's own two sources. A third-party extension that calls
+This only affects this package's own directive and `Scraper`. A third-party extension that calls
 `record_namespace()` directly (see below) is unaffected either way.
 
 ### Backreferences index
