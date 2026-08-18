@@ -280,7 +280,7 @@ def test_record_namespace_to_disk_and_load(tmp_path):
         source='make_thing().method',
         namespace={'make_thing': make_thing},
     )
-    loaded = autolink._load_disk_records(tmp_path)
+    loaded, _ = autolink._load_disk_records(tmp_path)
     call_candidates = [
         r for r in loaded['examples/plot_thing'] if isinstance(r, autolink._CallCandidate)
     ]
@@ -298,12 +298,24 @@ def test_record_namespace_to_disk_appends(tmp_path):
     autolink.record_namespace_to_disk(
         directory=tmp_path, docname='index', source='x', namespace={'x': _RecordNamespaceReturnType}
     )
-    loaded = autolink._load_disk_records(tmp_path)
+    loaded, _ = autolink._load_disk_records(tmp_path)
     assert len(loaded['index']) == 2
 
 
+def test_record_namespace_to_disk_with_category(tmp_path):
+    autolink.record_namespace_to_disk(
+        directory=tmp_path,
+        docname='examples/plot_thing',
+        source='x',
+        namespace={'x': _RecordNamespaceReturnType},
+        category='Sphinx Gallery',
+    )
+    _, categories = autolink._load_disk_records(tmp_path)
+    assert categories == {'examples/plot_thing': 'Sphinx Gallery'}
+
+
 def test_load_disk_records_missing_directory(tmp_path):
-    assert autolink._load_disk_records(tmp_path / 'does-not-exist') == {}
+    assert autolink._load_disk_records(tmp_path / 'does-not-exist') == ({}, {})
 
 
 def test_clear_disk_records_disabled():
@@ -664,7 +676,10 @@ def test_embed_links_name_already_linked(tmp_path):
 
 
 def test_render_full_index_empty():
-    assert autolink._render_full_index({}, docname='index', app=None, local={}, external={}) == ''
+    result = autolink._render_full_index(
+        {}, docname='index', app=None, local={}, external={}, categories={}
+    )
+    assert result == ''
 
 
 def test_render_index_entry_excludes_self_reference(tmp_path):
@@ -672,7 +687,15 @@ def test_render_index_entry_excludes_self_reference(tmp_path):
     # is not a genuine cross-reference to itself.
     app = _fake_app(_fake_env(), tmp_path)
     backrefs = {'pkg.thing': {'pkg.thing', 'other'}}
-    result = autolink._render_index_entry('pkg.thing', backrefs, docname='pkg.thing', app=app)
+    result = autolink._render_index_entry(
+        'pkg.thing',
+        backrefs,
+        docname='pkg.thing',
+        app=app,
+        categories={},
+        show_titles=False,
+        group_mode='auto',
+    )
     assert 'pkg.thing' not in result
     assert 'href="other"' in result
 
@@ -680,7 +703,15 @@ def test_render_index_entry_excludes_self_reference(tmp_path):
 def test_render_index_entry_self_reference_only_is_empty(tmp_path):
     app = _fake_app(_fake_env(), tmp_path)
     backrefs = {'pkg.thing': {'pkg.thing'}}
-    result = autolink._render_index_entry('pkg.thing', backrefs, docname='pkg.thing', app=app)
+    result = autolink._render_index_entry(
+        'pkg.thing',
+        backrefs,
+        docname='pkg.thing',
+        app=app,
+        categories={},
+        show_titles=False,
+        group_mode='auto',
+    )
     assert result == ''
 
 
@@ -688,7 +719,13 @@ def test_render_full_index_excludes_self_reference(tmp_path):
     app = _fake_app(_fake_env(), tmp_path)
     backrefs = {'pkg.thing': {'pkg.thing', 'other'}}
     result = autolink._render_full_index(
-        backrefs, docname='pkg.thing', app=app, local={}, external={}
+        backrefs,
+        docname='pkg.thing',
+        app=app,
+        local={},
+        external={},
+        categories={},
+        show_titles=False,
     )
     # 'pkg.thing' appears once, as the <dt> heading -- not again as a referencing-page link.
     assert result.count('pkg.thing') == 1

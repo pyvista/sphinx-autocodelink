@@ -98,6 +98,15 @@ section -- to every autodoc-documented object's own docstring automatically, via
 ``autodoc-process-docstring``. Off by default; requires ``sphinx.ext.autodoc`` (directly, or via
 something that depends on it, e.g. numpydoc).
 
+**Grouping by category.** `AutoCodeLinkScraper` tags every page it records `'Sphinx Gallery'` by
+default (pass `category=` to change or clear it); `.. autocodelink::` and `record_namespace()` take
+an optional `category=`/`:category:` of your own choosing. `.. autocodelink-index::` uses this to
+group referencing pages -- but only adaptively: `:group: auto` (the default) groups by category only
+when a given entry's references actually span more than one category, otherwise it's today's flat
+list either way, so a name referenced from just one place never gets a pointless one-item subheading.
+Force it with `:group: always` or `:group: never`. Untagged pages fall under a generic "Other" bucket
+whenever grouping does happen.
+
 ### Library use
 
 A consumer that already executes example code for its own purposes (e.g. to render a figure) can

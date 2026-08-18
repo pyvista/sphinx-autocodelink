@@ -38,6 +38,13 @@ _ENV_ATTR = 'sphinx_autocodelink_records'
 #: ``env`` attribute holding the set of docnames hosting an ``.. autocodelink-index::``.
 _INDEX_DOCS_ATTR = 'sphinx_autocodelink_index_docs'
 
+#: ``env`` attribute holding each docname's recording category (e.g. ``'Sphinx Gallery'``),
+#: for grouping backreferences by where they came from. Untagged docnames have no entry.
+_CATEGORY_ATTR = 'sphinx_autocodelink_categories'
+
+#: Display label for a referencing page with no recorded category.
+_UNCATEGORIZED_LABEL = 'Other'
+
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
 
@@ -293,18 +300,38 @@ def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _C
 
 
 def record_namespace(
-    *, env: BuildEnvironment, docname: str, source: str, namespace: dict[str, Any]
+    *,
+    env: BuildEnvironment,
+    docname: str,
+    source: str,
+    namespace: dict[str, Any],
+    category: str = '',
 ) -> None:
-    """Record candidate documented names for every identifier in ``source``."""
+    """Record candidate documented names for every identifier in ``source``.
+
+    ``category`` optionally tags where this recording came from (e.g. ``'Sphinx
+    Gallery'``, ``'Docstring examples'``), for grouping in ``.. autocodelink-index::``
+    output. Untagged pages display under a generic "Other" bucket when grouped.
+    """
     all_records: dict[str, list[_Candidate | _CallCandidate]] | None = getattr(env, _ENV_ATTR, None)
     if all_records is None:
         all_records = {}
         setattr(env, _ENV_ATTR, all_records)
     all_records.setdefault(docname, []).extend(_records_for(source, namespace))
 
+    if category:
+        categories: dict[str, str] = getattr(env, _CATEGORY_ATTR, None) or {}
+        categories[docname] = category
+        setattr(env, _CATEGORY_ATTR, categories)
+
 
 def record_namespace_to_disk(
-    *, directory: str | Path, docname: str, source: str, namespace: dict[str, Any]
+    *,
+    directory: str | Path,
+    docname: str,
+    source: str,
+    namespace: dict[str, Any],
+    category: str = '',
 ) -> None:
     """Like :func:`record_namespace`, but appended to a file under ``directory``.
 
@@ -316,8 +343,10 @@ def record_namespace_to_disk(
         return
     target = Path(directory) / f'{docname}.json'
     target.parent.mkdir(parents=True, exist_ok=True)
-    existing = json.loads(target.read_text()) if target.exists() else []
-    existing.extend(_to_jsonable(r) for r in records)
+    existing = json.loads(target.read_text()) if target.exists() else {'records': []}
+    existing['records'].extend(_to_jsonable(r) for r in records)
+    if category:
+        existing['category'] = category
     target.write_text(json.dumps(existing))
 
 
@@ -341,15 +370,21 @@ def _from_jsonable(entry: dict[str, Any]) -> _Candidate | _CallCandidate:
     return _Candidate(entry['accessed'], tuple(entry['candidates']))
 
 
-def _load_disk_records(directory: Path) -> dict[str, list[_Candidate | _CallCandidate]]:
-    """Return every docname's records written by :func:`record_namespace_to_disk`."""
-    result: dict[str, list[_Candidate | _CallCandidate]] = {}
+def _load_disk_records(
+    directory: Path,
+) -> tuple[dict[str, list[_Candidate | _CallCandidate]], dict[str, str]]:
+    """Return every docname's records and category, written by :func:`record_namespace_to_disk`."""
+    records: dict[str, list[_Candidate | _CallCandidate]] = {}
+    categories: dict[str, str] = {}
     if not directory.is_dir():
-        return result
+        return records, categories
     for file in directory.rglob('*.json'):
         docname = file.relative_to(directory).with_suffix('').as_posix()
-        result[docname] = [_from_jsonable(e) for e in json.loads(file.read_text())]
-    return result
+        data = json.loads(file.read_text())
+        records[docname] = [_from_jsonable(e) for e in data['records']]
+        if data.get('category'):
+            categories[docname] = data['category']
+    return records, categories
 
 
 def _clear_disk_records(app: Sphinx) -> None:
@@ -382,11 +417,17 @@ def _merge_records(
     their_index_docs: set[str] = getattr(other, _INDEX_DOCS_ATTR, set())
     setattr(env, _INDEX_DOCS_ATTR, our_index_docs | their_index_docs)
 
+    our_categories: dict[str, str] = getattr(env, _CATEGORY_ATTR, {})
+    their_categories: dict[str, str] = getattr(other, _CATEGORY_ATTR, {})
+    our_categories.update(their_categories)
+    setattr(env, _CATEGORY_ATTR, our_categories)
+
 
 def _purge_doc(app: Sphinx, env: BuildEnvironment, docname: str) -> None:
     """Drop stale records for a document being re-read."""
     getattr(env, _ENV_ATTR, {}).pop(docname, None)
     getattr(env, _INDEX_DOCS_ATTR, set()).discard(docname)
+    getattr(env, _CATEGORY_ATTR, {}).pop(docname, None)
 
 
 # ---------------------------------------------------------------------------
@@ -438,10 +479,13 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         return
 
     records: dict[str, list[_Candidate | _CallCandidate]] = dict(getattr(app.env, _ENV_ATTR, {}))
+    categories: dict[str, str] = dict(getattr(app.env, _CATEGORY_ATTR, {}))
     records_dir = getattr(app.config, 'autocodelink_records_dir', None)
     if records_dir:
-        for docname, disk_records in _load_disk_records(Path(app.srcdir) / records_dir).items():
-            records.setdefault(docname, []).extend(disk_records)
+        disk_records, disk_categories = _load_disk_records(Path(app.srcdir) / records_dir)
+        for docname, records_for_doc in disk_records.items():
+            records.setdefault(docname, []).extend(records_for_doc)
+        categories.update(disk_categories)
     index_docs: set[str] = set(getattr(app.env, _INDEX_DOCS_ATTR, ()))
     if not records and not index_docs:
         return
@@ -530,12 +574,17 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         out_file.write_text(combined.sub(_wrap, html), encoding='utf-8')
 
     if index_docs:
-        _fill_index_placeholders(app, index_docs, backrefs, local=local, external=external)
+        _fill_index_placeholders(
+            app, index_docs, backrefs, local=local, external=external, categories=categories
+        )
 
 
 #: Matches one ``.. autocodelink-index::`` placeholder, ``data-name`` empty for the full index.
+#: Placeholder options travel as one JSON blob (rather than growing positional data-*
+#: attributes indefinitely): {"name": str, "hide_empty": bool, "group": "auto"|"always"|"never",
+#: "titles": bool}.
 _INDEX_PLACEHOLDER_RE = re.compile(
-    r'<div class="sphinx-autocodelink-index" data-name="([^"]*)" data-hide-empty="([^"]*)"></div>'
+    r'<div class="sphinx-autocodelink-index" data-opts="([^"]*)"></div>'
 )
 
 #: Matches a ``:label:``-generated section (title + one placeholder), for the ``:hide-empty:``
@@ -563,8 +612,62 @@ def _index_entry_link(
     return external.get(name)
 
 
+def _docname_title(app: Sphinx, docname: str) -> str:
+    """Return ``docname``'s page title, or the docname itself if it has none on record."""
+    title_node = app.env.titles.get(docname)
+    return title_node.astext() if title_node is not None else docname
+
+
+def _render_ref_list(refs: list[str], *, docname: str, app: Sphinx, show_titles: bool) -> str:
+    """Render one ``<ul>`` of links to ``refs``, relative to ``docname``."""
+    items = ''.join(
+        f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">'
+        f'{escape(_docname_title(app, ref) if show_titles else ref)}</a></li>'
+        for ref in refs
+    )
+    return f'<ul class="sphinx-autocodelink-index">{items}</ul>'
+
+
+def _render_grouped_refs(
+    refs: list[str],
+    *,
+    docname: str,
+    app: Sphinx,
+    categories: dict[str, str],
+    show_titles: bool,
+    group_mode: str,
+) -> str:
+    """Render ``refs`` as one flat list, or grouped by category depending on ``group_mode``."""
+    groups: dict[str, list[str]] = {}
+    for ref in refs:
+        groups.setdefault(categories.get(ref, _UNCATEGORIZED_LABEL), []).append(ref)
+
+    should_group = group_mode == 'always' or (group_mode != 'never' and len(groups) > 1)
+    if not should_group:
+        return _render_ref_list(refs, docname=docname, app=app, show_titles=show_titles)
+
+    parts = []
+    for label in sorted(groups):
+        ref_list = _render_ref_list(
+            groups[label], docname=docname, app=app, show_titles=show_titles
+        )
+        parts.append(
+            '<div class="sphinx-autocodelink-index-group">'
+            f'<p class="sphinx-autocodelink-index-group-label">{escape(label)}</p>'
+            f'{ref_list}</div>'
+        )
+    return ''.join(parts)
+
+
 def _render_index_entry(
-    target: str, backrefs: dict[str, set[str]], *, docname: str, app: Sphinx
+    target: str,
+    backrefs: dict[str, set[str]],
+    *,
+    docname: str,
+    app: Sphinx,
+    categories: dict[str, str],
+    show_titles: bool,
+    group_mode: str,
 ) -> str:
     """Render one target name's list of referencing pages, or ``''`` if it has none.
 
@@ -574,11 +677,14 @@ def _render_index_entry(
     refs = sorted(ref for ref in backrefs.get(target, ()) if ref != docname)
     if not refs:
         return ''
-    items = ''.join(
-        f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(ref)}</a></li>'
-        for ref in refs
+    return _render_grouped_refs(
+        refs,
+        docname=docname,
+        app=app,
+        categories=categories,
+        show_titles=show_titles,
+        group_mode=group_mode,
     )
-    return f'<ul class="sphinx-autocodelink-index">{items}</ul>'
 
 
 def _render_index_html(
@@ -589,14 +695,32 @@ def _render_index_html(
     app: Sphinx,
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
+    categories: dict[str, str],
     hide_empty: bool = False,
+    show_titles: bool = False,
+    group_mode: str = 'auto',
 ) -> str:
     """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
     if name:
-        body = _render_index_entry(name, backrefs, docname=docname, app=app)
+        body = _render_index_entry(
+            name,
+            backrefs,
+            docname=docname,
+            app=app,
+            categories=categories,
+            show_titles=show_titles,
+            group_mode=group_mode,
+        )
     else:
         body = _render_full_index(
-            backrefs, docname=docname, app=app, local=local, external=external
+            backrefs,
+            docname=docname,
+            app=app,
+            local=local,
+            external=external,
+            categories=categories,
+            show_titles=show_titles,
+            group_mode=group_mode,
         )
 
     if not body:
@@ -613,6 +737,9 @@ def _render_full_index(
     app: Sphinx,
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
+    categories: dict[str, str],
+    show_titles: bool = False,
+    group_mode: str = 'auto',
 ) -> str:
     """Render the site-wide index: every resolved name and its referencing pages."""
     entries = []
@@ -625,11 +752,15 @@ def _render_full_index(
             target, from_docname=docname, app=app, local=local, external=external
         )
         heading = f'<a href="{link}">{escape(target)}</a>' if link else escape(target)
-        items = ''.join(
-            f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(ref)}</a></li>'
-            for ref in refs
+        body = _render_grouped_refs(
+            refs,
+            docname=docname,
+            app=app,
+            categories=categories,
+            show_titles=show_titles,
+            group_mode=group_mode,
         )
-        entries.append(f'<dt>{heading}</dt><dd><ul>{items}</ul></dd>')
+        entries.append(f'<dt>{heading}</dt><dd>{body}</dd>')
     if not entries:
         return ''
     return f'<dl class="sphinx-autocodelink-index">{"".join(entries)}</dl>'
@@ -642,20 +773,23 @@ def _fill_index_placeholders(
     *,
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
+    categories: dict[str, str],
 ) -> None:
     """Replace every ``.. autocodelink-index::`` placeholder with its rendered backreferences."""
 
     def _render_placeholder(match: re.Match[str], docname: str) -> str:
-        name = unescape(match.group(1))
-        hide_empty = match.group(2) == '1'
+        opts = json.loads(unescape(match.group(1)))
         return _render_index_html(
-            name,
+            opts['name'],
             backrefs,
             docname=docname,
             app=app,
             local=local,
             external=external,
-            hide_empty=hide_empty,
+            categories=categories,
+            hide_empty=opts['hide_empty'],
+            show_titles=opts['titles'],
+            group_mode=opts['group'],
         )
 
     def _render_section(match: re.Match[str], docname: str) -> str:
@@ -663,8 +797,9 @@ def _fill_index_placeholders(
         placeholder = _INDEX_PLACEHOLDER_RE.search(section_html)
         if placeholder is None:  # defensive: no placeholder inside, leave untouched
             return section_html
+        opts = json.loads(unescape(placeholder.group(1)))
         rendered = _render_placeholder(placeholder, docname)
-        if not rendered and placeholder.group(2) == '1':
+        if not rendered and opts['hide_empty']:
             return ''  # :hide-empty: and nothing to show -- drop the heading too
         return section_html[: placeholder.start()] + rendered + section_html[placeholder.end() :]
 

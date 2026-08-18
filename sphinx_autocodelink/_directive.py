@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import doctest
 from html import escape
+import json
 from typing import TYPE_CHECKING
 from typing import ClassVar
 
@@ -24,11 +25,16 @@ class AutoCodeLink(Directive):
     Renders the content as a syntax-highlighted code block; produces no
     figures or other output. Doctest-style (``>>>``) content executes with
     prompts stripped; plain code executes as-is.
+
+    :category: tags this page's records for grouping in
+        ``.. autocodelink-index::`` output (e.g. ``:category: Tutorials``).
+        Untagged pages display under a generic "Other" bucket when grouped.
     """
 
     has_content = True
     required_arguments = 0
     optional_arguments = 0
+    option_spec: ClassVar[dict[str, Callable[[str], object]]] = {'category': directives.unchanged}
 
     def run(self) -> list[nodes.Node]:
         """Execute the directive's content and return its rendered code block."""
@@ -39,11 +45,21 @@ class AutoCodeLink(Directive):
         env = self.state.document.settings.env
         namespace: dict = {}
         exec(compile(code, f'<{env.docname}>', 'exec'), namespace)  # noqa: S102
-        record_namespace(env=env, docname=env.docname, source=code, namespace=namespace)
+        record_namespace(
+            env=env,
+            docname=env.docname,
+            source=code,
+            namespace=namespace,
+            category=self.options.get('category', ''),
+        )
 
         node = nodes.literal_block(source, source)
         node['language'] = 'pycon' if is_doctest else 'python'
         return [node]
+
+
+def _group_choice(arg: str) -> str:
+    return directives.choice(arg, ('auto', 'always', 'never'))
 
 
 class AutoCodeLinkIndex(Directive):
@@ -60,6 +76,13 @@ class AutoCodeLinkIndex(Directive):
         this one up identically. :hide-empty: then omits the whole
         section -- title included -- instead of "No references found."
         when there's nothing to show; only meaningful alongside :label:.
+
+    :group: ``auto`` (default), ``always``, or ``never`` -- whether
+        referencing pages are grouped by their recorded category (e.g.
+        "Sphinx Gallery" vs "Docstring examples"). ``auto`` groups only
+        when more than one category is actually present for a given
+        entry; a single category (or none at all) renders as today's
+        flat list either way.
     """
 
     has_content = False
@@ -69,6 +92,7 @@ class AutoCodeLinkIndex(Directive):
     option_spec: ClassVar[dict[str, Callable[[str], object]]] = {
         'label': directives.unchanged,
         'hide-empty': directives.flag,
+        'group': _group_choice,
     }
 
     def run(self) -> list[nodes.Node]:
@@ -76,11 +100,14 @@ class AutoCodeLinkIndex(Directive):
         env = self.state.document.settings.env
         _note_index_doc(env, env.docname)
 
-        name = self.arguments[0] if self.arguments else ''
-        hide_empty = 'hide-empty' in self.options
+        opts = {
+            'name': self.arguments[0] if self.arguments else '',
+            'hide_empty': 'hide-empty' in self.options,
+            'group': self.options.get('group', 'auto'),
+            'titles': False,
+        }
         raw = (
-            f'<div class="sphinx-autocodelink-index" data-name="{escape(name)}" '
-            f'data-hide-empty="{"1" if hide_empty else ""}"></div>'
+            f'<div class="sphinx-autocodelink-index" data-opts="{escape(json.dumps(opts))}"></div>'
         )
         placeholder = nodes.raw('', raw, format='html')
 
@@ -89,7 +116,7 @@ class AutoCodeLinkIndex(Directive):
             return [placeholder]
 
         section = nodes.section(classes=['sphinx-autocodelink-backrefs'])
-        section['ids'] = [nodes.make_id(f'autocodelink-backrefs-{name or "index"}')]
+        section['ids'] = [nodes.make_id(f'autocodelink-backrefs-{opts["name"] or "index"}')]
         section += nodes.title(label, label)
         section += placeholder
         self.state.document.note_implicit_target(section, section)

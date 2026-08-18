@@ -29,9 +29,16 @@ class AutoCodeLinkScraper:
         }
     """
 
-    def __init__(self, records_dir: str = DEFAULT_RECORDS_DIR) -> None:
-        """Store the records directory, relative to the Sphinx source directory."""
+    def __init__(
+        self, records_dir: str = DEFAULT_RECORDS_DIR, category: str = 'Sphinx Gallery'
+    ) -> None:
+        """Store the records directory (relative to the Sphinx source directory) and category.
+
+        ``category`` tags every page this scraper records, for grouping in
+        ``.. autocodelink-index::`` output; pass ``''`` to leave pages untagged.
+        """
         self.records_dir = records_dir
+        self.category = category
 
     def __call__(self, block: Any, block_vars: dict[str, Any], gallery_conf: dict[str, Any]) -> str:
         """Record this block's identifiers. Called by Sphinx-Gallery; returns no image."""
@@ -46,5 +53,6 @@ class AutoCodeLinkScraper:
             docname=docname,
             source=block.content,
             namespace=block_vars['example_globals'],
+            category=self.category,
         )
         return ''

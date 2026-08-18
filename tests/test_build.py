@@ -48,17 +48,35 @@ def test_autocodelink_index(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()
     dl = re.search(r'<dl class="sphinx-autocodelink-index">.*?</dl>', refs, re.DOTALL).group()
-    uls = re.findall(r'<ul class="sphinx-autocodelink-index">.*?</ul>', refs, re.DOTALL)
 
     # full index: pkg.thing heading links to its docs, and lists every referencing page.
     assert 'href="api.html#pkg.thing"' in dl
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in dl
 
-    # filtered index (`pkg.thing`) repeats the same referencing pages.
-    assert len(uls) == 1
+    # default grouping (2 categories apply to pkg.thing: 'Other' for the directive-recorded
+    # index page, 'Sphinx Gallery' for the scraper-recorded examples).
+    groups = re.findall(
+        r'<div class="sphinx-autocodelink-index-group">'
+        r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>'
+        r'(<ul class="sphinx-autocodelink-index">.*?</ul>)</div>',
+        refs,
+        re.DOTALL,
+    )
+    by_label = dict(groups)
+    assert set(by_label) == {'Other', 'Sphinx Gallery'}
+    assert 'href="index.html"' in by_label['Other']
+    for page in ('auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
+        assert f'href="{page}"' in by_label['Sphinx Gallery']
+
+    # :group: never forces one flat list despite the same 2 categories applying: the ungrouped
+    # <ul> that follows the grouped <div>s, before the next paragraph.
+    after_groups = refs.split('</div><p>', 1)[1]
+    forced_flat = re.search(r'<ul class="sphinx-autocodelink-index">.*?</ul>', after_groups)
+    assert forced_flat is not None
+    assert 'sphinx-autocodelink-index-group' not in forced_flat.group()
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
-        assert f'href="{page}"' in uls[0]
+        assert f'href="{page}"' in forced_flat.group()
 
     # filtered index for a name with no references.
     assert 'No references found.' in refs
