@@ -281,20 +281,18 @@ def test_exec_with_local_scopes_namespace_wins_over_captured_locals():
     assert resolved['shared'] == 'global-value'
 
 
-def test_exec_with_local_scopes_restores_prior_trace_function():
-    sentinel_calls = []
+def test_exec_with_local_scopes_restores_prior_profile_function():
+    def sentinel_profiler(frame, event, arg):
+        pass
 
-    def sentinel_tracer(frame, event, arg):
-        sentinel_calls.append(event)
-        return sentinel_tracer
-
-    sys.settrace(sentinel_tracer)
+    old_profile = sys.getprofile()
+    sys.setprofile(sentinel_profiler)
     try:
         filename = '<test>'
         autolink.exec_with_local_scopes(compile('x = 1\n', filename, 'exec'), {}, filename)
-        assert sys.gettrace() is sentinel_tracer
+        assert sys.getprofile() is sentinel_profiler
     finally:
-        sys.settrace(None)
+        sys.setprofile(old_profile)
 
 
 class _RecordNamespaceReturnType:

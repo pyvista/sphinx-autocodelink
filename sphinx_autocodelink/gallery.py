@@ -92,20 +92,25 @@ class AutoCodeLinkScraper:
 
 
 def _trace_call(func: Callable[[], Any]) -> tuple[dict[str, Any], Any]:
-    """Call ``func()`` under tracing; return every local scope seen, and ``func()``'s result."""
-    captured: dict[str, Any] = {}
+    """Call ``func()`` under tracing; return every local scope seen, and ``func()``'s result.
 
-    def _tracer(frame: Any, event: str, arg: Any) -> Any:
+    Uses ``sys.setprofile()`` rather than ``sys.settrace()`` -- see
+    :func:`sphinx_autocodelink.exec_with_local_scopes` for why.
+    """
+    captured: dict[str, Any] = {}
+    old_profile = sys.getprofile()
+
+    def _profiler(frame: Any, event: str, arg: Any) -> None:
+        if old_profile is not None:
+            old_profile(frame, event, arg)
         if event == 'return':
             captured.update(frame.f_locals)
-        return _tracer
 
-    old_trace = sys.gettrace()
-    sys.settrace(_tracer)
+    sys.setprofile(_profiler)
     try:
         result = func()
     finally:
-        sys.settrace(old_trace)
+        sys.setprofile(old_profile)
     return captured, result
 
 

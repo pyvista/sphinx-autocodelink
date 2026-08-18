@@ -326,20 +326,28 @@ def exec_with_local_scopes(
     ``code`` is executed in ``namespace`` exactly as a plain ``exec(code,
     namespace)`` would -- ``namespace`` itself is unaffected by the tracing,
     only the returned dict differs.
+
+    Uses ``sys.setprofile()`` rather than ``sys.settrace()``: profile and
+    trace are separate hook slots in CPython, so this can't collide with a
+    coverage tool or debugger's own tracer (``sys.settrace()`` only supports
+    one tracer at a time pre-3.12/:pep:`669`, and a coverage tool's C tracer
+    can silently hijack the global trace function back to itself the moment
+    it's invoked out-of-band, breaking both sides).
     """
     captured: dict[str, Any] = {}
+    old_profile = sys.getprofile()
 
-    def _tracer(frame: Any, event: str, arg: Any) -> Any:
+    def _profiler(frame: Any, event: str, arg: Any) -> None:
+        if old_profile is not None:
+            old_profile(frame, event, arg)
         if event == 'return' and frame.f_code.co_filename == filename:
             captured.update(frame.f_locals)
-        return _tracer
 
-    old_trace = sys.gettrace()
-    sys.settrace(_tracer)
+    sys.setprofile(_profiler)
     try:
         exec(code, namespace)  # noqa: S102 -- caller controls what's compiled here
     finally:
-        sys.settrace(old_trace)
+        sys.setprofile(old_profile)
 
     merged = dict(captured)
     merged.update(namespace)
