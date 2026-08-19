@@ -534,11 +534,29 @@ def _resolve_link(
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
 ) -> tuple[str, str] | None:
-    """Return the first candidate's ``(name, url)``, local names taking priority, or ``None``."""
-    for name in candidates:
+    """Return the first candidate's ``(name, url)``, local names taking priority, or ``None``.
+
+    A class registers under more than one name in Sphinx's own object inventory -- e.g. its
+    full defining-module path alongside its short public name -- and both point at the exact
+    same page and anchor. Among immediately-following candidates that resolve to that same
+    target, prefers the shortest: whatever name the object's own docstring is documented (and
+    later looked up, for its own backreferences) under is always one of these short aliases,
+    so returning a longer one here would silently miss matching it there.
+    """
+    for i, name in enumerate(candidates):
         if name in local:
-            target_docname, anchor = local[name]
-            return name, f'{app.builder.get_relative_uri(docname, target_docname)}#{anchor}'
+            target = local[name]
+            best_name = name
+            for alt in candidates[i + 1 :]:
+                alt_target = local.get(alt)
+                if alt_target is None:
+                    continue
+                if alt_target != target:
+                    break
+                if len(alt) < len(best_name):
+                    best_name = alt
+            target_docname, anchor = local[best_name]
+            return best_name, f'{app.builder.get_relative_uri(docname, target_docname)}#{anchor}'
         if name in external:
             return name, external[name]
     return None

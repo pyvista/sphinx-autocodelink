@@ -515,6 +515,36 @@ def test_resolve_link_external():
     assert resolved == ('external.thing', 'https://example.invalid/thing.html')
 
 
+def test_resolve_link_prefers_the_shortest_alias_for_the_same_target():
+    # A class registers under both its full defining-module path and its short public
+    # name, both pointing at the same page -- the short one must win, since that's the
+    # name the object's own docstring (and its own backreferences) are keyed under.
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    resolved = autolink._resolve_link(
+        ('pkg.mod.Thing', 'pkg.Thing'),
+        docname='index',
+        app=app,
+        local={'pkg.mod.Thing': ('api', 'pkg.Thing'), 'pkg.Thing': ('api', 'pkg.Thing')},
+        external={},
+    )
+    assert resolved == ('pkg.Thing', 'api.html#pkg.Thing')
+
+
+def test_resolve_link_stops_preferring_short_names_at_a_different_target():
+    # A later candidate resolving to a genuinely different page (e.g. a base-class
+    # fallback) must not be preferred just for being shorter -- only aliases of the
+    # exact same target are interchangeable.
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    resolved = autolink._resolve_link(
+        ('pkg.mod.Thing', 'pkg.Base'),
+        docname='index',
+        app=app,
+        local={'pkg.mod.Thing': ('api', 'pkg.mod.Thing'), 'pkg.Base': ('other', 'pkg.Base')},
+        external={},
+    )
+    assert resolved == ('pkg.mod.Thing', 'api.html#pkg.mod.Thing')
+
+
 def test_render_ref_list_shows_all_entries_at_or_under_the_threshold():
     app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
     refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD)]
