@@ -57,6 +57,13 @@ _UNCATEGORIZED_LABEL = 'Documentation'
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
 
+#: Wraps an embedded link's own text in the same ``<code class="xref ...">`` markup a real
+#: ``:class:``/``:func:``/etc. cross-reference renders with, so a theme's own styling for
+#: those (bold, a distinct color from plain page links) applies here too -- rather than a
+#: link into a Python identifier looking like a link to an unrelated page.
+_XREF_OPEN = '<code class="xref py py-obj docutils literal notranslate">'
+_XREF_CLOSE = '</code>'
+
 # Pygments token classes: ``n``/``nn``/``nc``/... for names, ``o`` for dots.
 _NAME_SPAN = '<span class="n[a-zA-Z]{{0,2}}">{}</span>'
 _DOT_SPAN = '<span class="o">.</span>'
@@ -677,10 +684,16 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     return match.group(0)
                 prefix = match.string[match.start() : wrap_start]
                 wrapped = match.string[wrap_start:wrap_end]
-                return f'{prefix}<a class="sphinx-autocodelink-a" href="{link}">{wrapped}</a>'
+                return (
+                    f'{prefix}<a class="sphinx-autocodelink-a" href="{link}">{_XREF_OPEN}'
+                    f'{wrapped}{_XREF_CLOSE}</a>'
+                )
             if any(start <= match.start() < end for start, end in already_linked):
                 return match.group(0)
-            return f'<a class="sphinx-autocodelink-a" href="{link}">{match.group(0)}</a>'
+            return (
+                f'<a class="sphinx-autocodelink-a" href="{link}">{_XREF_OPEN}'
+                f'{match.group(0)}{_XREF_CLOSE}</a>'
+            )
 
         out_file.write_text(combined.sub(_wrap, html), encoding='utf-8')
 

@@ -764,7 +764,8 @@ def test_embed_links_call_chain(tmp_path):
     assert '<span class="n">Sphere</span></a>' not in result
     assert (
         '<a class="sphinx-autocodelink-a" href="api#pyvista.PolyData.plot">'
-        '<span class="o">.</span><span class="n">plot</span></a>' in result
+        '<code class="xref py py-obj docutils literal notranslate">'
+        '<span class="o">.</span><span class="n">plot</span></code></a>' in result
     )
     assert re.search(r'<a\b[^>]*><a\b', result) is None
 

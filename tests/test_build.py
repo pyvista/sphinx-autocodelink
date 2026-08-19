@@ -42,8 +42,9 @@ def test_directive_resolves_identifiers_local_to_a_helper_function(tmp_path):
     _, result = _build(tmp_path)
     assert (
         '<a class="sphinx-autocodelink-a" href="api.html#pkg.thing">'
+        '<code class="xref py py-obj docutils literal notranslate">'
         '<span class="n">local_ref</span><span class="o">.</span>'
-        '<span class="n">thing</span></a>' in result
+        '<span class="n">thing</span></code></a>' in result
     )
 
 
