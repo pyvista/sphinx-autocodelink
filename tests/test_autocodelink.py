@@ -792,10 +792,18 @@ def test_render_ref_list_wraps_a_page_style_entry_as_a_ref_role():
     )
 
 
-def test_render_ref_list_wraps_an_uncategorized_entry_as_a_ref_role():
+def test_render_ref_list_leaves_an_uncategorized_entry_plain():
     app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
     html = autolink._render_ref_list(['a'], docname='index', app=app, show_titles=False)
-    assert '<span class="std std-ref">a</span>' in html
+    assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
+
+
+def test_render_ref_list_leaves_a_custom_category_entry_plain():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Tutorials'}
+    )
+    assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
 
 
 def test_embed_links_skips_on_exception():

@@ -89,11 +89,8 @@ def test_autocodelink_index(tmp_path):
         )
     )
     assert set(groups) == {'Documentation', 'Sphinx Gallery', 'Docstring Examples'}
-    # a "Documentation"/"Sphinx Gallery" entry is a page or section -- exactly what a real
-    # :ref: points at -- and renders the same way (bold, the ordinary link color).
-    assert (
-        '<a href="index.html"><span class="std std-ref">Index</span></a>' in groups['Documentation']
-    )
+    # a "Sphinx Gallery" entry is a real, structured page with a real anchor -- exactly what a
+    # real :ref: points at -- and renders the same way (bold, the ordinary link color).
     assert (
         '<a href="auto_examples/plot_thing.html"><span class="std std-ref">Plotting a thing'
         '</span></a>' in groups['Sphinx Gallery']
@@ -108,11 +105,14 @@ def test_autocodelink_index(tmp_path):
         '<a href="api.html"><code class="xref py py-obj docutils literal notranslate">API'
         '</code></a>' in groups['Docstring Examples']
     )
+    # "Documentation" is the generic uncategorized bucket -- no similarly specific real
+    # target to point at, so it's a plain link like any other page reference.
+    assert '<a href="index.html">Index</a>' in groups['Documentation']
 
     # :group: never forces one flat list despite the same 3 categories applying.
     forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
     assert 'sphinx-autocodelink-index-group' not in forced_flat
-    assert '<a href="index.html"><span class="std std-ref">Index</span></a>' in forced_flat
+    assert '<a href="index.html">Index</a>' in forced_flat
     assert (
         '<a href="auto_examples/plot_thing.html"><span class="std std-ref">Plotting a thing'
         '</span></a>' in forced_flat
@@ -120,7 +120,7 @@ def test_autocodelink_index(tmp_path):
 
     # :no-titles: shows docnames instead.
     no_titles = _block_after(refs, 'docnames instead of titles:')
-    assert '<a href="index.html"><span class="std std-ref">index</span></a>' in no_titles
+    assert '<a href="index.html">index</a>' in no_titles
     assert (
         '<a href="auto_examples/plot_thing.html">'
         '<span class="std std-ref">auto_examples/plot_thing</span></a>' in no_titles
@@ -164,8 +164,8 @@ def test_autodoc_backrefs(tmp_path):
     assert '<h2>Used In' in section.group()
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in section.group()
-    # titles, not docnames; bold in the ordinary link color, like a real :ref:.
-    assert '<a href="index.html"><span class="std std-ref">Index</span></a>' in section.group()
+    # titles, not docnames; a plain link since "Documentation" is the generic bucket.
+    assert '<a href="index.html">Index</a>' in section.group()
 
     # pkg.unused has no references: nothing appended at all, not even "No references found."
     unused_dd = re.search(r'id="pkg\.unused">.*?</dd>', api, re.DOTALL).group()

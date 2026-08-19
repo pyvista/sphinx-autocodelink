@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from sphinx_autocodelink import DEFAULT_GALLERY_CATEGORY
 from sphinx_autocodelink import DEFAULT_RECORDS_DIR
 from sphinx_autocodelink import record_namespace_to_disk
 
@@ -34,7 +35,7 @@ class AutoCodeLinkScraper:
     """
 
     def __init__(
-        self, records_dir: str = DEFAULT_RECORDS_DIR, category: str = 'Sphinx Gallery'
+        self, records_dir: str = DEFAULT_RECORDS_DIR, category: str = DEFAULT_GALLERY_CATEGORY
     ) -> None:
         """Store the records directory (relative to the Sphinx source directory) and category.
 

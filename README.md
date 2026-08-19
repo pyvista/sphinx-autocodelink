@@ -180,12 +180,18 @@ autocodelink_category_labels = {
 entries; past that it shows the first 5 and tucks the rest behind a `<details>` "N more" toggle, so
 a heavily-used name's index entry doesn't turn into a wall of links.
 
-**Styling.** A `'Docstring Examples'` entry links to another documented object's own page, so it
-renders like a real `:class:`/`:func:`/etc. cross-reference would; any other entry (a gallery
-example, a guide) links to a page or section instead, so it renders like a real `:ref:` would.
-Most themes style both bold, but in different colors -- an object xref usually a distinct color
-from a plain link, a `:ref:` usually the same color as one. Either way, the theme is doing that on
-its own, from the same markup a real cross-reference or `:ref:` carries; nothing to configure here.
+**Styling.** Three categories, three link styles, matching how specific a real target each one
+actually has:
+
+- `'Docstring Examples'` links to another documented object's own page, so it renders like a real
+  `:class:`/`:func:`/etc. cross-reference would (most themes style that bold, in a distinct color).
+- `'Sphinx Gallery'` links to a real, structured page with a real anchor, so it renders like a real
+  `:ref:` would instead (most themes style that bold too, but in the ordinary link color).
+- Anything else (an uncategorized or custom-tagged page) is a plain link -- there's no similarly
+  specific real target to point at, just "some page, somewhere in the docs".
+
+Either way, the theme is doing the styling on its own, from the same markup a real cross-reference
+or `:ref:` carries; nothing to configure here.
 
 ### Resolving identifiers local to a helper function
 

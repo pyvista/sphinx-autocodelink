@@ -75,9 +75,10 @@ _XREF_CLOSE = '</code>'
 
 #: Wraps a "Used In" entry's own text in the same ``<span class="std std-ref">`` markup a real
 #: ``:ref:`` role renders with -- most themes style that bold too, but in the ordinary link
-#: color rather than an xref's, since it points at a page or section, not a Python object.
-#: Every category but :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` (a gallery example, a guide)
-#: is exactly that.
+#: color rather than an xref's. For :data:`DEFAULT_GALLERY_CATEGORY` specifically: a real,
+#: structured page with a real anchor, same as what a ``:ref:`` points at -- unlike an
+#: uncategorized or custom-tagged entry, which is just "some page" with nothing that specific
+#: to point at, and stays a plain link.
 _STD_REF_OPEN = '<span class="std std-ref">'
 _STD_REF_CLOSE = '</span>'
 
@@ -375,6 +376,10 @@ def exec_with_local_scopes(
 #: autodoc-documented object's own docstring (e.g. its Examples section), as opposed to a
 #: hand-written page. Applied automatically when ``state`` is passed and no ``category`` is.
 DEFAULT_DOCSTRING_EXAMPLE_CATEGORY = 'Docstring Examples'
+
+#: Default category (see :func:`record_namespace`) :class:`~sphinx_autocodelink.gallery.
+#: AutoCodeLinkScraper` tags every page it records.
+DEFAULT_GALLERY_CATEGORY = 'Sphinx Gallery'
 
 
 def is_inside_autodoc_desc(state: RSTState) -> bool:
@@ -842,8 +847,11 @@ def _render_ref_list(
 
     An entry recorded under :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` -- itself another
     documented object's own page -- renders like a real ``:class:``/``:func:``/etc.
-    cross-reference would. Any other entry (a gallery example, a guide) renders like a real
-    ``:ref:`` would instead, since that's exactly what it is: a page or section, not an object.
+    cross-reference would. One under :data:`DEFAULT_GALLERY_CATEGORY` renders like a real
+    ``:ref:`` instead, since that's exactly what it is: a specific, structured page with a
+    real anchor, not an object. Anything else (a hand-written page, an uncategorized or
+    custom-tagged one) is a plain page link -- there's no similarly specific real target to
+    point at, just "some page, somewhere in the docs".
 
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
     with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
@@ -859,9 +867,10 @@ def _render_ref_list(
         for label, ref in entries:
             href = app.builder.get_relative_uri(docname, ref)
             text = escape(label)
-            if categories.get(ref) == DEFAULT_DOCSTRING_EXAMPLE_CATEGORY:
+            category = categories.get(ref)
+            if category == DEFAULT_DOCSTRING_EXAMPLE_CATEGORY:
                 text = f'{_XREF_OPEN}{text}{_XREF_CLOSE}'
-            else:
+            elif category == DEFAULT_GALLERY_CATEGORY:
                 text = f'{_STD_REF_OPEN}{text}{_STD_REF_CLOSE}'
             items.append(f'<li><a href="{href}">{text}</a></li>')
         return ''.join(items)
