@@ -697,11 +697,18 @@ _COLLAPSE_THRESHOLD = 8
 _COLLAPSE_VISIBLE = 5
 
 
+#: Above this many hidden entries, the overflow list lays out in columns instead of one
+#: long single-file scroll -- skimmable rather than a wall of links to nowhere.
+_COLUMN_LAYOUT_THRESHOLD = 24
+
+
 def _render_ref_list(refs: list[str], *, docname: str, app: Sphinx, show_titles: bool) -> str:
     """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``, sorted by display text.
 
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
-    with the rest tucked behind a ``<details>`` toggle.
+    with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
+    picks up the same indentation and spacing as its sibling entries for free, from whatever
+    list styling the theme already applies, rather than trying to replicate it.
     """
     labeled = sorted((_docname_title(app, ref) if show_titles else ref, ref) for ref in refs)
 
@@ -716,12 +723,18 @@ def _render_ref_list(refs: list[str], *, docname: str, app: Sphinx, show_titles:
         return f'<ul class="sphinx-autocodelink-index">{render(labeled)}</ul>'
 
     visible, hidden = labeled[:_COLLAPSE_VISIBLE], labeled[_COLLAPSE_VISIBLE:]
+    hidden_style = (
+        ' style="columns: 16em; column-gap: 1.5em;"'
+        if len(hidden) > _COLUMN_LAYOUT_THRESHOLD
+        else ''
+    )
     return (
-        f'<ul class="sphinx-autocodelink-index">{render(visible)}</ul>'
-        '<details class="sphinx-autocodelink-index-more">'
+        f'<ul class="sphinx-autocodelink-index">{render(visible)}'
+        '<li class="sphinx-autocodelink-index-more"><details>'
         f'<summary>{len(hidden)} more</summary>'
-        f'<ul class="sphinx-autocodelink-index">{render(hidden)}</ul>'
-        '</details>'
+        f'<ul class="sphinx-autocodelink-index"{hidden_style}>{render(hidden)}</ul>'
+        '</details></li>'
+        '</ul>'
     )
 
 
@@ -752,7 +765,7 @@ def _render_grouped_refs(
         )
         parts.append(
             '<div class="sphinx-autocodelink-index-group">'
-            f'<p class="sphinx-autocodelink-index-group-label">{escape(label)}</p>'
+            f'<p class="sphinx-autocodelink-index-group-label"><strong>{escape(label)}</strong></p>'
             f'{ref_list}</div>'
         )
     return ''.join(parts)

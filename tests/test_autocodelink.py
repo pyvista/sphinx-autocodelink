@@ -579,6 +579,48 @@ def test_fill_index_placeholders_drops_dangling_nav_link_for_hidden_section(tmp_
     assert 'Used In' not in result
 
 
+def test_render_ref_list_more_toggle_is_its_own_list_item():
+    # A sibling <li> picks up the same indentation/spacing as the other entries from
+    # whatever list styling the theme already applies -- no bespoke CSS to keep in sync.
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
+    html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
+    assert '<li class="sphinx-autocodelink-index-more"><details>' in html
+
+
+def test_render_ref_list_no_column_layout_below_the_column_threshold():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
+    html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
+    assert 'columns:' not in html
+
+
+def test_render_ref_list_columns_past_the_column_threshold():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    refs = [
+        f'page{i}'
+        for i in range(autolink._COLLAPSE_VISIBLE + autolink._COLUMN_LAYOUT_THRESHOLD + 1)
+    ]
+    html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
+    assert 'columns: 16em;' in html
+
+
+def test_render_grouped_refs_bolds_the_group_label():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_category_labels={}),
+    )
+    html = autolink._render_grouped_refs(
+        ['a', 'b'],
+        docname='index',
+        app=app,
+        categories={'a': 'Docstring Examples', 'b': 'Guides'},
+        show_titles=False,
+        group_mode='always',
+    )
+    assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
+
+
 def test_embed_links_skips_on_exception():
     app = SimpleNamespace(builder=SimpleNamespace(format='html'))
     assert autolink._embed_links(app, Exception('build failed')) is None

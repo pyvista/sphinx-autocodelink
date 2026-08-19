@@ -82,7 +82,7 @@ def test_autocodelink_index(tmp_path):
     groups = dict(
         re.findall(
             r'<div class="sphinx-autocodelink-index-group">'
-            r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>'
+            r'<p class="sphinx-autocodelink-index-group-label"><strong>([^<]*)</strong></p>'
             r'(<ul class="sphinx-autocodelink-index">.*?</ul>)</div>',
             grouped,
             re.DOTALL,
@@ -130,7 +130,9 @@ def test_autocodelink_category_labels_renames_group_headings(tmp_path):
     )
     refs = (outdir / 'refs.html').read_text()
     grouped = _block_after(refs, 'since 3 categories apply):')
-    labels = re.findall(r'<p class="sphinx-autocodelink-index-group-label">([^<]*)</p>', grouped)
+    labels = re.findall(
+        r'<p class="sphinx-autocodelink-index-group-label"><strong>([^<]*)</strong></p>', grouped
+    )
     assert set(labels) == {'Gallery Examples', 'API Docs', 'API Examples'}
 
 
