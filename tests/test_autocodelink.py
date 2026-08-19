@@ -766,6 +766,32 @@ def test_render_grouped_refs_bolds_the_group_label():
     assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
 
 
+def test_render_grouped_refs_sorts_by_the_renamed_label_not_the_category():
+    # Unrenamed, alphabetical order would be 'Docstring Examples', 'Documentation',
+    # 'Sphinx Gallery' -- but renamed to 'Zeta', 'Alpha', 'Beta', the *renamed* order
+    # ('Alpha', 'Beta', 'Zeta') is what must show up.
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(
+            autocodelink_category_labels={
+                'Docstring Examples': 'Zeta',
+                'Documentation': 'Alpha',
+                'Sphinx Gallery': 'Beta',
+            }
+        ),
+    )
+    html = autolink._render_grouped_refs(
+        ['a', 'b', 'c'],
+        docname='index',
+        app=app,
+        categories={'a': 'Docstring Examples', 'b': 'Documentation', 'c': 'Sphinx Gallery'},
+        show_titles=False,
+        group_mode='always',
+    )
+    labels = re.findall(r'<strong>([^<]*)</strong>', html)
+    assert labels == ['Alpha', 'Beta', 'Zeta']
+
+
 def test_render_ref_list_wraps_a_docstring_example_entry_as_a_cross_reference():
     app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
     html = autolink._render_ref_list(

@@ -150,6 +150,10 @@ def test_autocodelink_category_labels_renames_group_headings(tmp_path):
         r'<p class="sphinx-autocodelink-index-group-label"><strong>([^<]*)</strong></p>', grouped
     )
     assert set(labels) == {'Gallery Examples', 'API Docs', 'API Examples'}
+    # sorted by the *displayed* label ('API Docs', 'API Examples', 'Gallery Examples'), not
+    # by the underlying category ('Docstring Examples', 'Documentation', 'Sphinx Gallery') --
+    # those would put 'API Examples' before 'API Docs', out of alphabetical order.
+    assert labels == ['API Docs', 'API Examples', 'Gallery Examples']
 
 
 def test_autodoc_backrefs(tmp_path):

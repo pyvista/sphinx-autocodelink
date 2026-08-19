@@ -916,7 +916,10 @@ def _render_grouped_refs(
 
     category_labels = getattr(app.config, 'autocodelink_category_labels', {})
     parts = []
-    for category in sorted(groups):
+    # Sorted by each group's own *displayed* label, not its underlying category string --
+    # a renamed category (autocodelink_category_labels) must sort into place among the
+    # names readers actually see, not the internal ones they never do.
+    for category in sorted(groups, key=lambda c: category_labels.get(c, c)):
         label = category_labels.get(category, category)
         ref_list = _render_ref_list(
             groups[category],
