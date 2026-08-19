@@ -92,6 +92,30 @@ than the real executed object) link wins wherever both would apply. Prefer `inte
 over `reference_url`, which this extension already reads and which covers every page, not just
 gallery pages -- then there's nothing to fall back to it for.
 
+### Bare doctest blocks (opt-in, site-wide)
+
+The directive, the Sphinx-Gallery scraper, and library use (below) are all opt-in *by use*: only
+the specific blocks that name them get executed. `autocodelink_autodoc_backrefs` is the one
+exception -- set it and *every* bare `>>>` doctest block anywhere in the docs (a docstring's
+Examples section, a hand-written page, anywhere) is executed and its identifiers recorded, with no
+`.. autocodelink::` needed on any of them individually:
+
+```python
+autocodelink_doctest_blocks = True
+```
+
+Read this before enabling it:
+
+- **It runs code the page's author never marked as runnable**, purely because it looks like a
+  doctest session -- including in third-party docstrings pulled in via `autodoc` from dependencies
+  you may not have fully read.
+- **A failing block doesn't fail the build, but it still ran first.** A block that fails to parse or
+  raises while running (elided/pseudo-code, one needing a resource that isn't there at build time)
+  is skipped with a build warning -- but whatever it did before failing already happened.
+- **Each block gets its own fresh namespace.** A later block can't see a name bound by an earlier
+  one, even within the same docstring's Examples section -- unlike `.. autocodelink::`, which
+  executes its whole content as one script.
+
 ### Backreferences index
 
 `.. autocodelink-index::` lists every linked name and the pages that reference it, filled in once

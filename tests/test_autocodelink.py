@@ -8,6 +8,9 @@ import sys
 import types
 from types import SimpleNamespace
 
+from docutils import nodes
+from sphinx import addnodes
+
 import sphinx_autocodelink as autolink
 
 
@@ -364,6 +367,88 @@ def test_record_namespace_state_does_not_override_explicit_category():
     assert getattr(env, autolink._CATEGORY_ATTR)['api'] == 'Tutorials'
 
 
+def test_is_inside_desc_node_true_when_a_desc_ancestor_exists():
+    desc = addnodes.desc()
+    block = nodes.doctest_block()
+    desc += block
+    assert autolink._is_inside_desc_node(block) is True
+
+
+def test_is_inside_desc_node_false_with_no_desc_ancestor():
+    section = nodes.section()
+    block = nodes.doctest_block()
+    section += block
+    assert autolink._is_inside_desc_node(block) is False
+
+
+def _doctree_with_doctest_blocks(*sources):
+    """Return a document whose children are ``doctest_block`` nodes, one per source."""
+    document = nodes.document(settings=SimpleNamespace(), reporter=SimpleNamespace())
+    for source in sources:
+        document += nodes.doctest_block(source, source)
+    return document
+
+
+def test_record_bare_doctest_blocks_disabled_by_default():
+    doctree = _doctree_with_doctest_blocks('>>> x = 1\n')
+    env = SimpleNamespace(docname='index')
+    app = SimpleNamespace(env=env, config=SimpleNamespace())
+    autolink._record_bare_doctest_blocks(app, doctree)
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+
+
+def test_record_bare_doctest_blocks_records_identifiers():
+    doctree = _doctree_with_doctest_blocks('>>> import re\n>>> pattern = re.compile("x")\n')
+    env = SimpleNamespace(docname='index')
+    app = SimpleNamespace(env=env, config=SimpleNamespace(autocodelink_doctest_blocks=True))
+    autolink._record_bare_doctest_blocks(app, doctree)
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
+def test_record_bare_doctest_blocks_tags_docstring_example_category():
+    desc = addnodes.desc()
+    block = nodes.doctest_block('>>> 1 + 1\n', '>>> 1 + 1\n')
+    desc += block
+    document = nodes.document(settings=SimpleNamespace(), reporter=SimpleNamespace())
+    document += desc
+    env = SimpleNamespace(docname='index')
+    app = SimpleNamespace(env=env, config=SimpleNamespace(autocodelink_doctest_blocks=True))
+    autolink._record_bare_doctest_blocks(app, document)
+    assert (
+        getattr(env, autolink._CATEGORY_ATTR)['index']
+        == autolink.DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
+    )
+
+
+def test_record_bare_doctest_blocks_skips_unparseable_block():
+    doctree = _doctree_with_doctest_blocks('>>> this is not )( valid python\n')
+    env = SimpleNamespace(docname='index')
+    app = SimpleNamespace(env=env, config=SimpleNamespace(autocodelink_doctest_blocks=True))
+    autolink._record_bare_doctest_blocks(app, doctree)
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+
+
+def test_record_bare_doctest_blocks_skips_a_raising_block():
+    doctree = _doctree_with_doctest_blocks('>>> raise ValueError("boom")\n')
+    env = SimpleNamespace(docname='index')
+    app = SimpleNamespace(env=env, config=SimpleNamespace(autocodelink_doctest_blocks=True))
+    autolink._record_bare_doctest_blocks(app, doctree)
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+
+
+def test_record_bare_doctest_blocks_each_block_gets_a_fresh_namespace():
+    # A name bound in one block isn't visible to a later, separate block: the second
+    # block's reference to `shared` raises NameError and is skipped, so only the first
+    # block's own assignment is recorded.
+    doctree = _doctree_with_doctest_blocks('>>> shared = 1\n', '>>> shared + 1\n')
+    env = SimpleNamespace(docname='index')
+    app = SimpleNamespace(env=env, config=SimpleNamespace(autocodelink_doctest_blocks=True))
+    autolink._record_bare_doctest_blocks(app, doctree)
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert records == [autolink._Candidate('shared', ('builtins.int',))]
+
+
 def test_record_namespace_to_disk_no_records(tmp_path):
     autolink.record_namespace_to_disk(
         directory=tmp_path, docname='index', source='x = 1', namespace={}
@@ -475,6 +560,7 @@ def test_setup():
         'env-merge-info': [autolink._merge_records],
         'env-purge-doc': [autolink._purge_doc],
         'build-finished': [autolink._embed_links],
+        'doctree-read': [autolink._record_bare_doctest_blocks],
     }
     # runs after other build-finished handlers at Sphinx's default priority (500) -- see
     # setup()'s docstring for why (Sphinx-Gallery's reference_url embedding, notably).
@@ -483,6 +569,7 @@ def test_setup():
         'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
         'autocodelink_autodoc_backrefs': (False, 'html'),
         'autocodelink_category_labels': ({}, 'html'),
+        'autocodelink_doctest_blocks': (False, 'html'),
     }
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}

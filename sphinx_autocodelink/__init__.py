@@ -1,11 +1,12 @@
 """Dynamic hyperlinking of identifiers in already-executed Sphinx code output.
 
 Resolves each identifier against the real namespace it executed in, rather
-than inferring its type statically (cf. sphinx-codeautolink). Library-only:
-never executes anything itself. A consumer that already executes example
-code for its own purposes (e.g. to render a figure) calls
-:func:`record_namespace` with the resulting namespace; call :func:`setup`
-from that consumer's own Sphinx ``setup(app)`` to wire up link embedding.
+than inferring its type statically (cf. sphinx-codeautolink). Never executes
+anything itself, by default: a consumer that already executes example code
+for its own purposes (e.g. to render a figure) calls :func:`record_namespace`
+with the resulting namespace; call :func:`setup` from that consumer's own
+Sphinx ``setup(app)`` to wire up link embedding. The one opt-in exception is
+``autocodelink_doctest_blocks`` -- see :func:`setup`.
 
 Limitations: a call with no intermediate variable (``pv.Sphere().plot()``) only
 resolves its trailing attribute when the call's return annotation is a plain,
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import doctest
 from html import escape
 from html import unescape
 import inspect
@@ -29,6 +31,10 @@ import sys
 from typing import TYPE_CHECKING
 from typing import Any
 
+from docutils import nodes
+from sphinx import addnodes
+from sphinx.util import logging as sphinx_logging
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import CodeType
@@ -36,6 +42,8 @@ if TYPE_CHECKING:
     from docutils.parsers.rst.states import RSTState
     from sphinx.application import Sphinx
     from sphinx.environment import BuildEnvironment
+
+_logger = sphinx_logging.getLogger(__name__)
 
 #: ``env`` attribute holding recorded candidates, keyed by docname.
 _ENV_ATTR = 'sphinx_autocodelink_records'
@@ -367,6 +375,70 @@ def is_inside_autodoc_desc(state: RSTState) -> bool:
     ``docutils.parsers.rst.Directive.run()``.
     """
     return bool(state.document.settings.env.temp_data.get('object'))
+
+
+def _is_inside_desc_node(node: nodes.Node) -> bool:
+    """Return whether ``node`` is nested inside an object description, by doctree ancestry.
+
+    A ``doctree-read`` transform has no directive ``state`` to hand :func:`is_inside_autodoc_desc`
+    -- but by then the whole page's tree, autodoc-documented docstrings included, is fully
+    assembled, so walking up for an ``addnodes.desc`` ancestor is reliable here (unlike at
+    directive-run time, when a docstring's own content is still a detached subtree).
+    """
+    parent = node.parent
+    while parent is not None:
+        if isinstance(parent, addnodes.desc):
+            return True
+        parent = parent.parent
+    return False
+
+
+def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
+    """Execute and record every bare ``>>>`` doctest block on the page.
+
+    Opt-in via ``autocodelink_doctest_blocks`` -- see :func:`setup` for what this means and
+    the risk it carries before enabling it. Unlike every other recording path in this
+    extension, this one runs code the page's author never explicitly marked as executable
+    (no ``.. autocodelink::``, no host directive calling :func:`record_namespace` itself) --
+    purely because it happens to look like a doctest session. A block that fails to parse or
+    raises while running (elided/pseudo-code, one relying on state from a separate block, one
+    needing external resources) is skipped with a warning, not treated as a build failure.
+    """
+    env = app.env
+    if not getattr(app.config, 'autocodelink_doctest_blocks', False):
+        return
+    docname = env.docname
+    filename = f'<{docname}>'
+    for index, block in enumerate(doctree.findall(nodes.doctest_block)):
+        source = block.astext()
+        try:
+            code = doctest.script_from_examples(source)
+            compiled = compile(code, filename, 'exec')
+        except SyntaxError as error:
+            _logger.warning(
+                'autocodelink: skipping doctest block %d (could not parse: %s)',
+                index,
+                error,
+                location=block,
+            )
+            continue
+        try:
+            # Arbitrary code the page's author wrote, not this extension's own -- any
+            # failure here must be skipped, never allowed to fail the build.
+            namespace = exec_with_local_scopes(compiled, {}, filename)
+        except Exception as error:  # noqa: BLE001
+            _logger.warning(
+                'autocodelink: skipping doctest block %d (raised %s: %s)',
+                index,
+                type(error).__name__,
+                error,
+                location=block,
+            )
+            continue
+        category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY if _is_inside_desc_node(block) else ''
+        record_namespace(
+            env=env, docname=docname, source=code, namespace=namespace, category=category
+        )
 
 
 def record_namespace(
@@ -1070,6 +1142,24 @@ def setup(app: Sphinx) -> dict[str, bool]:
     and grouped by. A category with no entry displays under its own name
     unchanged; that includes ``'Documentation'``, the default for anything
     recorded with no category at all.
+
+    ``autocodelink_doctest_blocks`` (default ``False``) is the one exception to "opt-in by
+    use": once enabled, *every* bare ``>>>`` doctest block anywhere in the docs -- in a
+    docstring's Examples section, in a hand-written page, anywhere -- is executed and its
+    identifiers recorded, with no ``.. autocodelink::`` needed on any of them individually.
+    This is the only way this extension ever executes code on its own initiative, rather
+    than observing code something else already executes for its own purposes (a host
+    directive, Sphinx-Gallery). Understand what that means before enabling it:
+
+    - It runs code the page's author never marked as runnable, purely because it looks
+      like a doctest session -- including in third-party docstrings pulled in via
+      ``autodoc`` from dependencies you may not have fully read.
+    - A failing block (elided/pseudo-code, one relying on a variable from a separate
+      block, one needing a resource that isn't there at build time) is skipped with a
+      warning rather than failing the build, but it still *ran* first, with whatever
+      side effects that entailed, before the failure surfaced.
+    - Each block executes in its own fresh namespace -- a later block cannot see a name
+      bound by an earlier one, even within the same docstring's Examples section.
     """
     from sphinx_autocodelink._directive import AutoCodeLink
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
@@ -1083,9 +1173,11 @@ def setup(app: Sphinx) -> dict[str, bool]:
     # (which does) skip whatever it already wrapped, instead of nesting inside it.
     app.connect('build-finished', _embed_links, priority=900)
     app.connect('builder-inited', _register_autodoc_hook)
+    app.connect('doctree-read', _record_bare_doctest_blocks)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
+    app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}
