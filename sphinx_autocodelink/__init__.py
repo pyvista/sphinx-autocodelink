@@ -74,12 +74,16 @@ _XREF_OPEN = '<code class="xref py py-obj docutils literal notranslate">'
 _XREF_CLOSE = '</code>'
 
 #: Wraps a "Used In" entry's own text in the same ``<span class="std std-ref">`` markup a real
-#: ``:ref:`` role renders with -- most themes style that bold too, but in the ordinary link
-#: color rather than an xref's. For :data:`DEFAULT_GALLERY_CATEGORY` specifically: a real,
-#: structured page with a real anchor, same as what a ``:ref:`` points at -- unlike an
-#: uncategorized or custom-tagged entry, which is just "some page" with nothing that specific
-#: to point at, and stays a plain link.
-_STD_REF_OPEN = '<span class="std std-ref">'
+#: ``:ref:`` role renders with, plus an explicit bold weight: unlike a ``:class:``/``:func:``/
+#: etc. cross-reference (rendered as ``<code>``, which most themes already bold on their own,
+#: from a generic "code inside a link" rule -- no ``:ref:``-specific styling needed), a plain
+#: ``<span>`` gets no such rule anywhere, in any theme checked so far. Without forcing it, a
+#: ``:ref:``-style entry would end up visually identical to an uncategorized plain link, losing
+#: the distinction the category itself draws. For :data:`DEFAULT_GALLERY_CATEGORY`
+#: specifically: a real, structured page with a real anchor, same as what a ``:ref:`` points
+#: at -- unlike an uncategorized or custom-tagged entry, which is just "some page" with
+#: nothing that specific to point at, and stays a plain link.
+_STD_REF_OPEN = '<span class="std std-ref" style="font-weight: bold;">'
 _STD_REF_CLOSE = '</span>'
 
 # Pygments token classes: ``n``/``nn``/``nc``/... for names, ``o`` for dots.

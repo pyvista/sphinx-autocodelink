@@ -10,6 +10,9 @@ from sphinx.application import Sphinx
 
 TINYPAGES = Path(__file__).parent / 'tinypages'
 
+#: Matches sphinx_autocodelink._STD_REF_OPEN.
+STD_REF = '<span class="std std-ref" style="font-weight: bold;">'
+
 
 def _build(tmp_path, *, parallel=1, confoverrides=None):
     """Build a fresh copy of the tinypages fixture; return the outdir and index.html text."""
@@ -92,12 +95,12 @@ def test_autocodelink_index(tmp_path):
     # a "Sphinx Gallery" entry is a real, structured page with a real anchor -- exactly what a
     # real :ref: points at -- and renders the same way (bold, the ordinary link color).
     assert (
-        '<a href="auto_examples/plot_thing.html"><span class="std std-ref">Plotting a thing'
-        '</span></a>' in groups['Sphinx Gallery']
+        f'<a href="auto_examples/plot_thing.html">{STD_REF}Plotting a thing</span></a>'
+        in groups['Sphinx Gallery']
     )
     assert (
-        '<a href="auto_examples/plot_other.html"><span class="std std-ref">Plotting another '
-        'thing</span></a>' in groups['Sphinx Gallery']
+        f'<a href="auto_examples/plot_other.html">{STD_REF}Plotting another thing</span></a>'
+        in groups['Sphinx Gallery']
     )
     # a "Docstring Examples" entry -- itself another documented object's own page -- renders
     # like a real cross-reference (bold, distinct color), not a plain page link.
@@ -114,16 +117,16 @@ def test_autocodelink_index(tmp_path):
     assert 'sphinx-autocodelink-index-group' not in forced_flat
     assert '<a href="index.html">Index</a>' in forced_flat
     assert (
-        '<a href="auto_examples/plot_thing.html"><span class="std std-ref">Plotting a thing'
-        '</span></a>' in forced_flat
+        f'<a href="auto_examples/plot_thing.html">{STD_REF}Plotting a thing</span></a>'
+        in forced_flat
     )
 
     # :no-titles: shows docnames instead.
     no_titles = _block_after(refs, 'docnames instead of titles:')
     assert '<a href="index.html">index</a>' in no_titles
     assert (
-        '<a href="auto_examples/plot_thing.html">'
-        '<span class="std std-ref">auto_examples/plot_thing</span></a>' in no_titles
+        f'<a href="auto_examples/plot_thing.html">{STD_REF}auto_examples/plot_thing</span></a>'
+        in no_titles
     )
 
     # filtered index for a name with no references.

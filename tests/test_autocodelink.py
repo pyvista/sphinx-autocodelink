@@ -813,8 +813,8 @@ def test_render_ref_list_wraps_a_page_style_entry_as_a_ref_role():
         ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Sphinx Gallery'}
     )
     assert html == (
-        '<ul class="sphinx-autocodelink-index">'
-        '<li><a href="a.html"><span class="std std-ref">a</span></a></li></ul>'
+        '<ul class="sphinx-autocodelink-index"><li><a href="a.html">'
+        f'{autolink._STD_REF_OPEN}a{autolink._STD_REF_CLOSE}</a></li></ul>'
     )
 
 
