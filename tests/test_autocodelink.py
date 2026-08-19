@@ -781,12 +781,21 @@ def test_render_ref_list_wraps_a_docstring_example_entry_as_a_cross_reference():
     )
 
 
-def test_render_ref_list_leaves_a_page_style_entry_plain():
+def test_render_ref_list_wraps_a_page_style_entry_as_a_ref_role():
     app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
     html = autolink._render_ref_list(
         ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Sphinx Gallery'}
     )
-    assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
+    assert html == (
+        '<ul class="sphinx-autocodelink-index">'
+        '<li><a href="a.html"><span class="std std-ref">a</span></a></li></ul>'
+    )
+
+
+def test_render_ref_list_wraps_an_uncategorized_entry_as_a_ref_role():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    html = autolink._render_ref_list(['a'], docname='index', app=app, show_titles=False)
+    assert '<span class="std std-ref">a</span>' in html
 
 
 def test_embed_links_skips_on_exception():

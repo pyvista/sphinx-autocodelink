@@ -69,10 +69,17 @@ _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
 #: ``:class:``/``:func:``/etc. cross-reference renders with, so a theme's own styling for those
 #: (bold, a distinct color from a plain page link) applies here too -- for an entry that's
 #: itself another documented object's own page (the "Docstring Examples" category), which is
-#: exactly what a real xref would point at. A page-style entry (a gallery example, a guide)
-#: isn't one, and stays a plain link.
+#: exactly what a real xref would point at.
 _XREF_OPEN = '<code class="xref py py-obj docutils literal notranslate">'
 _XREF_CLOSE = '</code>'
+
+#: Wraps a "Used In" entry's own text in the same ``<span class="std std-ref">`` markup a real
+#: ``:ref:`` role renders with -- most themes style that bold too, but in the ordinary link
+#: color rather than an xref's, since it points at a page or section, not a Python object.
+#: Every category but :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` (a gallery example, a guide)
+#: is exactly that.
+_STD_REF_OPEN = '<span class="std std-ref">'
+_STD_REF_CLOSE = '</span>'
 
 # Pygments token classes: ``n``/``nn``/``nc``/... for names, ``o`` for dots.
 _NAME_SPAN = '<span class="n[a-zA-Z]{{0,2}}">{}</span>'
@@ -835,7 +842,8 @@ def _render_ref_list(
 
     An entry recorded under :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` -- itself another
     documented object's own page -- renders like a real ``:class:``/``:func:``/etc.
-    cross-reference would; anything else (a gallery example, a guide) is a plain page link.
+    cross-reference would. Any other entry (a gallery example, a guide) renders like a real
+    ``:ref:`` would instead, since that's exactly what it is: a page or section, not an object.
 
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
     with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
@@ -853,6 +861,8 @@ def _render_ref_list(
             text = escape(label)
             if categories.get(ref) == DEFAULT_DOCSTRING_EXAMPLE_CATEGORY:
                 text = f'{_XREF_OPEN}{text}{_XREF_CLOSE}'
+            else:
+                text = f'{_STD_REF_OPEN}{text}{_STD_REF_CLOSE}'
             items.append(f'<li><a href="{href}">{text}</a></li>')
         return ''.join(items)
 

@@ -181,10 +181,11 @@ entries; past that it shows the first 5 and tucks the rest behind a `<details>` 
 a heavily-used name's index entry doesn't turn into a wall of links.
 
 **Styling.** A `'Docstring Examples'` entry links to another documented object's own page, so it
-renders like a real `:class:`/`:func:`/etc. cross-reference would (most themes style that bold, in a
-distinct color from a plain page link) -- the theme is doing that on its own, from the same
-`docutils literal`/`xref` markup a real cross-reference carries; nothing to configure here. An entry
-in any other category (a gallery example, a guide) is a genuine page link and stays plain.
+renders like a real `:class:`/`:func:`/etc. cross-reference would; any other entry (a gallery
+example, a guide) links to a page or section instead, so it renders like a real `:ref:` would.
+Most themes style both bold, but in different colors -- an object xref usually a distinct color
+from a plain link, a `:ref:` usually the same color as one. Either way, the theme is doing that on
+its own, from the same markup a real cross-reference or `:ref:` carries; nothing to configure here.
 
 ### Resolving identifiers local to a helper function
 
