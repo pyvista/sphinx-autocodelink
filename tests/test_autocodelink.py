@@ -504,6 +504,16 @@ def test_intersphinx_inventory():
     }
 
 
+def test_aliased_names():
+    objects = {
+        'pkg.Thing': SimpleNamespace(aliased=False),
+        'pkg.mod.Thing': SimpleNamespace(aliased=True),
+        'pkg.other': SimpleNamespace(aliased=False),
+    }
+    app = SimpleNamespace(env=SimpleNamespace(domains={'py': SimpleNamespace(objects=objects)}))
+    assert autolink._aliased_names(app) == {'pkg.mod.Thing'}
+
+
 def test_resolve_link_external():
     resolved = autolink._resolve_link(
         ('external.thing',),
@@ -515,10 +525,11 @@ def test_resolve_link_external():
     assert resolved == ('external.thing', 'https://example.invalid/thing.html')
 
 
-def test_resolve_link_prefers_the_shortest_alias_for_the_same_target():
-    # A class registers under both its full defining-module path and its short public
-    # name, both pointing at the same page -- the short one must win, since that's the
-    # name the object's own docstring (and its own backreferences) are keyed under.
+def test_resolve_link_prefers_a_non_aliased_name_for_the_same_target():
+    # A class registers under both its full defining-module path (Sphinx's own
+    # auto-added `:canonical:` cross-reference -- `aliased`) and its short public name,
+    # both pointing at the same page. The non-aliased one must win: it's the name the
+    # object is actually documented under, and what its own backreferences are keyed by.
     app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
     resolved = autolink._resolve_link(
         ('pkg.mod.Thing', 'pkg.Thing'),
@@ -526,14 +537,30 @@ def test_resolve_link_prefers_the_shortest_alias_for_the_same_target():
         app=app,
         local={'pkg.mod.Thing': ('api', 'pkg.Thing'), 'pkg.Thing': ('api', 'pkg.Thing')},
         external={},
+        aliased=frozenset({'pkg.mod.Thing'}),
     )
     assert resolved == ('pkg.Thing', 'api.html#pkg.Thing')
 
 
-def test_resolve_link_stops_preferring_short_names_at_a_different_target():
+def test_resolve_link_keeps_an_aliased_name_with_no_non_aliased_alternative():
+    # If every candidate resolving to this target is aliased, there's nothing better to
+    # fall back to -- return it rather than nothing.
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    resolved = autolink._resolve_link(
+        ('pkg.mod.Thing',),
+        docname='index',
+        app=app,
+        local={'pkg.mod.Thing': ('api', 'pkg.mod.Thing')},
+        external={},
+        aliased=frozenset({'pkg.mod.Thing'}),
+    )
+    assert resolved == ('pkg.mod.Thing', 'api.html#pkg.mod.Thing')
+
+
+def test_resolve_link_does_not_prefer_a_non_aliased_name_at_a_different_target():
     # A later candidate resolving to a genuinely different page (e.g. a base-class
-    # fallback) must not be preferred just for being shorter -- only aliases of the
-    # exact same target are interchangeable.
+    # fallback) must not be preferred just for being non-aliased -- only an alternative
+    # name for the exact same target is interchangeable with an aliased match.
     app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
     resolved = autolink._resolve_link(
         ('pkg.mod.Thing', 'pkg.Base'),
@@ -541,6 +568,7 @@ def test_resolve_link_stops_preferring_short_names_at_a_different_target():
         app=app,
         local={'pkg.mod.Thing': ('api', 'pkg.mod.Thing'), 'pkg.Base': ('other', 'pkg.Base')},
         external={},
+        aliased=frozenset({'pkg.mod.Thing'}),
     )
     assert resolved == ('pkg.mod.Thing', 'api.html#pkg.mod.Thing')
 
@@ -721,7 +749,7 @@ def test_embed_links_call_chain(tmp_path):
 
     env = _fake_env()
     env.domains['py'].objects['pyvista.PolyData.plot'] = SimpleNamespace(
-        docname='api', node_id='pyvista.PolyData.plot'
+        docname='api', node_id='pyvista.PolyData.plot', aliased=False
     )
     setattr(
         env,
@@ -748,7 +776,7 @@ def test_embed_links_merges_disk_records(tmp_path):
 
     env = _fake_env()
     env.domains['py'].objects['test_autocodelink._RecordNamespaceReturnType'] = SimpleNamespace(
-        docname='api', node_id='test_autocodelink._RecordNamespaceReturnType'
+        docname='api', node_id='test_autocodelink._RecordNamespaceReturnType', aliased=False
     )
     records_dir = tmp_path / 'records'
     autolink.record_namespace_to_disk(
@@ -776,10 +804,10 @@ def test_embed_links_call_chain_and_plain_candidate_coexist(tmp_path):
 
     env = _fake_env()
     env.domains['py'].objects['pyvista.PolyData.plot'] = SimpleNamespace(
-        docname='api', node_id='pyvista.PolyData.plot'
+        docname='api', node_id='pyvista.PolyData.plot', aliased=False
     )
     env.domains['py'].objects['pyvista.Sphere'] = SimpleNamespace(
-        docname='api2', node_id='pyvista.Sphere'
+        docname='api2', node_id='pyvista.Sphere', aliased=False
     )
     setattr(
         env,
@@ -811,7 +839,7 @@ def test_embed_links_call_chain_dedup(tmp_path):
 
     env = _fake_env()
     env.domains['py'].objects['pyvista.PolyData.plot'] = SimpleNamespace(
-        docname='api', node_id='pyvista.PolyData.plot'
+        docname='api', node_id='pyvista.PolyData.plot', aliased=False
     )
     # recorded twice, e.g. referenced from two documented functions on the same page.
     setattr(
@@ -847,7 +875,7 @@ def test_embed_links_call_chain_already_linked(tmp_path):
 
     env = _fake_env()
     env.domains['py'].objects['pyvista.PolyData.plot'] = SimpleNamespace(
-        docname='api', node_id='pyvista.PolyData.plot'
+        docname='api', node_id='pyvista.PolyData.plot', aliased=False
     )
     setattr(
         env,
@@ -881,7 +909,9 @@ def test_embed_links_name_dedup(tmp_path):
     out_file.write_text(html)
 
     env = _fake_env()
-    env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(docname='api', node_id='pkg.mesh')
+    env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(
+        docname='api', node_id='pkg.mesh', aliased=False
+    )
     setattr(
         env,
         autolink._ENV_ATTR,
@@ -907,7 +937,9 @@ def test_embed_links_name_already_linked(tmp_path):
     out_file.write_text(html)
 
     env = _fake_env()
-    env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(docname='api', node_id='pkg.mesh')
+    env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(
+        docname='api', node_id='pkg.mesh', aliased=False
+    )
     setattr(env, autolink._ENV_ATTR, {'index': [autolink._Candidate('mesh', ('pkg.mesh',))]})
     app = _fake_app(env, tmp_path)
     autolink._embed_links(app, None)

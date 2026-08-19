@@ -515,6 +515,18 @@ def _local_inventory(app: Sphinx) -> dict[str, tuple[str, str]]:
     }
 
 
+def _aliased_names(app: Sphinx) -> set[str]:
+    """Return every name registered only as a ``:canonical:`` cross-reference target.
+
+    Sphinx auto-adds one of these -- pointing at the same page -- for an object documented
+    under a shorter public alias than the module it's actually defined in (autodoc sets
+    ``:canonical:`` whenever the two differ). The alias is what the object is actually
+    documented under, and what its own docstring's backreferences are keyed by, so an
+    aliased name should lose to a non-aliased one resolving to the same target.
+    """
+    return {name for name, entry in app.env.domains['py'].objects.items() if entry.aliased}
+
+
 def _intersphinx_inventory(app: Sphinx) -> dict[str, str]:
     """Return ``{name: absolute_url}`` for every intersphinx-mapped object."""
     from sphinx.ext.intersphinx import InventoryAdapter
@@ -533,28 +545,27 @@ def _resolve_link(
     app: Sphinx,
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
+    aliased: frozenset[str] = frozenset(),
 ) -> tuple[str, str] | None:
     """Return the first candidate's ``(name, url)``, local names taking priority, or ``None``.
 
     A class registers under more than one name in Sphinx's own object inventory -- e.g. its
-    full defining-module path alongside its short public name -- and both point at the exact
-    same page and anchor. Among immediately-following candidates that resolve to that same
-    target, prefers the shortest: whatever name the object's own docstring is documented (and
-    later looked up, for its own backreferences) under is always one of these short aliases,
-    so returning a longer one here would silently miss matching it there.
+    full defining-module path alongside its short public name -- both pointing at the exact
+    same page and anchor. If the first match found is one of ``aliased`` (Sphinx's own
+    ``:canonical:`` cross-reference, not the name the object is actually documented under),
+    prefers a later candidate resolving to that same target that isn't -- an aliased name
+    would silently fail to match how the object's own docstring looks up its
+    backreferences, which is always keyed by the non-aliased name.
     """
     for i, name in enumerate(candidates):
         if name in local:
             target = local[name]
             best_name = name
-            for alt in candidates[i + 1 :]:
-                alt_target = local.get(alt)
-                if alt_target is None:
-                    continue
-                if alt_target != target:
-                    break
-                if len(alt) < len(best_name):
-                    best_name = alt
+            if name in aliased:
+                for alt in candidates[i + 1 :]:
+                    if local.get(alt) == target and alt not in aliased:
+                        best_name = alt
+                        break
             target_docname, anchor = local[best_name]
             return best_name, f'{app.builder.get_relative_uri(docname, target_docname)}#{anchor}'
         if name in external:
@@ -580,6 +591,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         return
 
     local = _local_inventory(app)
+    aliased = frozenset(_aliased_names(app))
     external = _intersphinx_inventory(app)
     backrefs: dict[str, set[str]] = {}
 
@@ -597,7 +609,12 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                 if call_key in resolved_calls:
                     continue
                 resolved = _resolve_link(
-                    candidate.candidates, docname=docname, app=app, local=local, external=external
+                    candidate.candidates,
+                    docname=docname,
+                    app=app,
+                    local=local,
+                    external=external,
+                    aliased=aliased,
                 )
                 if resolved is not None:
                     name, link = resolved
@@ -607,7 +624,12 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                 if candidate.accessed in resolved_names:
                     continue
                 resolved = _resolve_link(
-                    candidate.candidates, docname=docname, app=app, local=local, external=external
+                    candidate.candidates,
+                    docname=docname,
+                    app=app,
+                    local=local,
+                    external=external,
+                    aliased=aliased,
                 )
                 if resolved is not None:
                     name, link = resolved
