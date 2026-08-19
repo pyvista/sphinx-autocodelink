@@ -180,6 +180,12 @@ autocodelink_category_labels = {
 entries; past that it shows the first 5 and tucks the rest behind a `<details>` "N more" toggle, so
 a heavily-used name's index entry doesn't turn into a wall of links.
 
+**Styling.** A `'Docstring Examples'` entry links to another documented object's own page, so it
+renders like a real `:class:`/`:func:`/etc. cross-reference would (most themes style that bold, in a
+distinct color from a plain page link) -- the theme is doing that on its own, from the same
+`docutils literal`/`xref` markup a real cross-reference carries; nothing to configure here. An entry
+in any other category (a gallery example, a guide) is a genuine page link and stays plain.
+
 ### Resolving identifiers local to a helper function
 
 Only a script's top-level namespace is resolvable by default -- a root identifier that only ever

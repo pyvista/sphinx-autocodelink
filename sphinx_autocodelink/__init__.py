@@ -65,10 +65,12 @@ _UNCATEGORIZED_LABEL = 'Documentation'
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
 
-#: Wraps an embedded link's own text in the same ``<code class="xref ...">`` markup a real
-#: ``:class:``/``:func:``/etc. cross-reference renders with, so a theme's own styling for
-#: those (bold, a distinct color from plain page links) applies here too -- rather than a
-#: link into a Python identifier looking like a link to an unrelated page.
+#: Wraps a "Used In" entry's own text in the same ``<code class="xref ...">`` markup a real
+#: ``:class:``/``:func:``/etc. cross-reference renders with, so a theme's own styling for those
+#: (bold, a distinct color from a plain page link) applies here too -- for an entry that's
+#: itself another documented object's own page (the "Docstring Examples" category), which is
+#: exactly what a real xref would point at. A page-style entry (a gallery example, a guide)
+#: isn't one, and stays a plain link.
 _XREF_OPEN = '<code class="xref py py-obj docutils literal notranslate">'
 _XREF_CLOSE = '</code>'
 
@@ -756,16 +758,10 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     return match.group(0)
                 prefix = match.string[match.start() : wrap_start]
                 wrapped = match.string[wrap_start:wrap_end]
-                return (
-                    f'{prefix}<a class="sphinx-autocodelink-a" href="{link}">{_XREF_OPEN}'
-                    f'{wrapped}{_XREF_CLOSE}</a>'
-                )
+                return f'{prefix}<a class="sphinx-autocodelink-a" href="{link}">{wrapped}</a>'
             if any(start <= match.start() < end for start, end in already_linked):
                 return match.group(0)
-            return (
-                f'<a class="sphinx-autocodelink-a" href="{link}">{_XREF_OPEN}'
-                f'{match.group(0)}{_XREF_CLOSE}</a>'
-            )
+            return f'<a class="sphinx-autocodelink-a" href="{link}">{match.group(0)}</a>'
 
         out_file.write_text(combined.sub(_wrap, html), encoding='utf-8')
 
@@ -827,22 +823,38 @@ _COLLAPSE_VISIBLE = 5
 _COLUMN_LAYOUT_THRESHOLD = 24
 
 
-def _render_ref_list(refs: list[str], *, docname: str, app: Sphinx, show_titles: bool) -> str:
+def _render_ref_list(
+    refs: list[str],
+    *,
+    docname: str,
+    app: Sphinx,
+    show_titles: bool,
+    categories: dict[str, str] | None = None,
+) -> str:
     """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``, sorted by display text.
+
+    An entry recorded under :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` -- itself another
+    documented object's own page -- renders like a real ``:class:``/``:func:``/etc.
+    cross-reference would; anything else (a gallery example, a guide) is a plain page link.
 
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
     with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
     picks up the same indentation and spacing as its sibling entries for free, from whatever
     list styling the theme already applies, rather than trying to replicate it.
     """
+    categories = categories or {}
     labeled = sorted((_docname_title(app, ref) if show_titles else ref, ref) for ref in refs)
 
     def render(entries: list[tuple[str, str]]) -> str:
         """Render a sequence of (label, ref) pairs as ``<li>`` entries."""
-        return ''.join(
-            f'<li><a href="{app.builder.get_relative_uri(docname, ref)}">{escape(label)}</a></li>'
-            for label, ref in entries
-        )
+        items = []
+        for label, ref in entries:
+            href = app.builder.get_relative_uri(docname, ref)
+            text = escape(label)
+            if categories.get(ref) == DEFAULT_DOCSTRING_EXAMPLE_CATEGORY:
+                text = f'{_XREF_OPEN}{text}{_XREF_CLOSE}'
+            items.append(f'<li><a href="{href}">{text}</a></li>')
+        return ''.join(items)
 
     if len(labeled) <= _COLLAPSE_THRESHOLD:
         return f'<ul class="sphinx-autocodelink-index">{render(labeled)}</ul>'
@@ -879,14 +891,20 @@ def _render_grouped_refs(
 
     should_group = group_mode == 'always' or (group_mode != 'never' and len(groups) > 1)
     if not should_group:
-        return _render_ref_list(refs, docname=docname, app=app, show_titles=show_titles)
+        return _render_ref_list(
+            refs, docname=docname, app=app, show_titles=show_titles, categories=categories
+        )
 
     category_labels = getattr(app.config, 'autocodelink_category_labels', {})
     parts = []
     for category in sorted(groups):
         label = category_labels.get(category, category)
         ref_list = _render_ref_list(
-            groups[category], docname=docname, app=app, show_titles=show_titles
+            groups[category],
+            docname=docname,
+            app=app,
+            show_titles=show_titles,
+            categories=categories,
         )
         parts.append(
             '<div class="sphinx-autocodelink-index-group">'

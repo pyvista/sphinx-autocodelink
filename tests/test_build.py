@@ -42,9 +42,8 @@ def test_directive_resolves_identifiers_local_to_a_helper_function(tmp_path):
     _, result = _build(tmp_path)
     assert (
         '<a class="sphinx-autocodelink-a" href="api.html#pkg.thing">'
-        '<code class="xref py py-obj docutils literal notranslate">'
         '<span class="n">local_ref</span><span class="o">.</span>'
-        '<span class="n">thing</span></code></a>' in result
+        '<span class="n">thing</span></a>' in result
     )
 
 
@@ -98,7 +97,12 @@ def test_autocodelink_index(tmp_path):
         '<a href="auto_examples/plot_other.html">Plotting another thing</a>'
         in groups['Sphinx Gallery']
     )
-    assert '<a href="api.html">API</a>' in groups['Docstring Examples']
+    # a "Docstring Examples" entry -- itself another documented object's own page -- renders
+    # like a real cross-reference (bold, distinct color), not a plain page link.
+    assert (
+        '<a href="api.html"><code class="xref py py-obj docutils literal notranslate">API'
+        '</code></a>' in groups['Docstring Examples']
+    )
 
     # :group: never forces one flat list despite the same 3 categories applying.
     forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')

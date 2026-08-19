@@ -766,6 +766,29 @@ def test_render_grouped_refs_bolds_the_group_label():
     assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
 
 
+def test_render_ref_list_wraps_a_docstring_example_entry_as_a_cross_reference():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    html = autolink._render_ref_list(
+        ['a'],
+        docname='index',
+        app=app,
+        show_titles=False,
+        categories={'a': autolink.DEFAULT_DOCSTRING_EXAMPLE_CATEGORY},
+    )
+    assert (
+        '<a href="a.html"><code class="xref py py-obj docutils literal notranslate">a</code></a>'
+        in html
+    )
+
+
+def test_render_ref_list_leaves_a_page_style_entry_plain():
+    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Sphinx Gallery'}
+    )
+    assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
+
+
 def test_embed_links_skips_on_exception():
     app = SimpleNamespace(builder=SimpleNamespace(format='html'))
     assert autolink._embed_links(app, Exception('build failed')) is None
@@ -851,8 +874,7 @@ def test_embed_links_call_chain(tmp_path):
     assert '<span class="n">Sphere</span></a>' not in result
     assert (
         '<a class="sphinx-autocodelink-a" href="api#pyvista.PolyData.plot">'
-        '<code class="xref py py-obj docutils literal notranslate">'
-        '<span class="o">.</span><span class="n">plot</span></code></a>' in result
+        '<span class="o">.</span><span class="n">plot</span></a>' in result
     )
     assert re.search(r'<a\b[^>]*><a\b', result) is None
 
