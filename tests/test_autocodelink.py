@@ -86,6 +86,22 @@ def test_candidate_names_property():
     assert any(c.endswith('Widget.name') for c in candidates)
 
 
+def test_candidate_names_metaclass_property():
+    # A property on the metaclass (e.g. an enum's classproperty) is invoked when accessed
+    # on the class itself, so it must be caught the same way an instance property is.
+    class Meta(type):
+        @property
+        def dimension_map(cls):
+            return {0: frozenset()}
+
+    class CellType(metaclass=Meta):
+        pass
+
+    namespace = {'CellType': CellType}
+    candidates = autolink._candidate_names('CellType.dimension_map', namespace)
+    assert any(c.endswith('CellType.dimension_map') for c in candidates)
+
+
 def test_candidate_names_getattr_raises():
     # object() has no .nonexistent attribute -- like a variable reassigned mid-script.
     namespace = {'x': object()}

@@ -238,7 +238,10 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
         method: list[str] = []
         for level in remainder:
             owner = obj
-            prop = getattr(type(owner), level, None) if not inspect.isclass(owner) else None
+            # Checked on type(owner) either way: for an instance this is the property's
+            # defining class; for a class this is its metaclass, which is what actually gets
+            # invoked for a metaclass property (e.g. an enum's classproperty) accessed on it.
+            prop = getattr(type(owner), level, None)
             if isinstance(prop, property):
                 obj = owner
                 is_class_attr, method = True, [level]
