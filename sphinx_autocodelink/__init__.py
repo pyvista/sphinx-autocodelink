@@ -292,23 +292,30 @@ def _resolve_object(accessed: str, namespace: dict[str, Any]) -> Any | None:
 
 
 def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
-    """Return ``func``'s return type, if its annotation names one plain, resolvable class.
+    """Return ``func``'s return type, if its annotation names a resolvable class.
 
     Checked against ``func``'s own module first, then every module already in
     ``namespace`` -- covers aliases ``func``'s module only imports under ``TYPE_CHECKING``.
+    A union annotation (``PolyData | str``, common for a ``load: bool`` toggle between a
+    dataset and a bare filename) is tried member by member, in the order written, so the
+    first resolvable member wins.
     """
     annotation = getattr(func, '__annotations__', {}).get('return')
     if isinstance(annotation, type):
         return annotation
-    if not isinstance(annotation, str) or not _SIMPLE_NAME_RE.match(annotation):
+    if not isinstance(annotation, str):
         return None
-    name = annotation.rsplit('.', 1)[-1]
     namespaces = [getattr(func, '__globals__', {})]
     namespaces.extend(vars(obj) for obj in namespace.values() if inspect.ismodule(obj))
-    for ns in namespaces:
-        candidate = ns.get(name)
-        if isinstance(candidate, type):
-            return candidate
+    for member in annotation.split('|'):
+        member = member.strip()
+        if not _SIMPLE_NAME_RE.match(member):
+            continue
+        name = member.rsplit('.', 1)[-1]
+        for ns in namespaces:
+            candidate = ns.get(name)
+            if isinstance(candidate, type):
+                return candidate
     return None
 
 

@@ -198,11 +198,24 @@ def test_call_return_type_resolves_via_fallback_namespace():
     )
 
 
-def test_call_return_type_rejects_complex_annotation():
+def test_call_return_type_union_with_no_resolvable_member():
     def make_widget_or_string() -> Widget | str:  # noqa: F821
         return ''
 
     assert autolink._call_return_type(make_widget_or_string, {}) is None
+
+
+class _CallReturnTypeUnionMember:
+    """Used only by test_call_return_type_resolves_first_resolvable_union_member."""
+
+
+def test_call_return_type_resolves_first_resolvable_union_member():
+    # `T | str` is pyvista's own `download_*(load: bool = True)` pattern: the dataset
+    # class comes first, a bare filename second, and the class is what should win.
+    def make_thing_or_string() -> _CallReturnTypeUnionMember | str:
+        return ''
+
+    assert autolink._call_return_type(make_thing_or_string, {}) is _CallReturnTypeUnionMember
 
 
 def test_call_return_type_no_annotation():
@@ -239,6 +252,18 @@ def test_call_chain_candidates():
 
     candidates = autolink._call_chain_candidates(
         'make_thing', ('method',), {'make_thing': make_thing}
+    )
+    assert any(c.endswith('_CallChainCandidatesReturnType.method') for c in candidates)
+
+
+def test_call_chain_candidates_union_return_type():
+    # e.g. `examples.download_lucy().triangulate()`: the downloader's `T | str` toggle
+    # return type must not sink linking the method called directly on its result.
+    def download_thing() -> _CallChainCandidatesReturnType | str:
+        return _CallChainCandidatesReturnType()
+
+    candidates = autolink._call_chain_candidates(
+        'download_thing', ('method',), {'download_thing': download_thing}
     )
     assert any(c.endswith('_CallChainCandidatesReturnType.method') for c in candidates)
 
