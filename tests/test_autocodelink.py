@@ -9,13 +9,23 @@ import sys
 import types
 from types import SimpleNamespace
 from typing import Literal
-from typing import get_overloads
 from typing import overload
 
 from docutils import nodes
+import pytest
 from sphinx import addnodes
 
 import sphinx_autocodelink as autolink
+
+# typing.get_overloads was added in 3.11 -- see sphinx_autocodelink's own import guard.
+try:
+    from typing import get_overloads
+except ImportError:  # Python 3.10
+    get_overloads = None
+
+needs_get_overloads = pytest.mark.skipif(
+    get_overloads is None, reason='typing.get_overloads added in Python 3.11'
+)
 
 
 def test_accessed_names_syntax_error():
@@ -359,6 +369,7 @@ def _overload_true(load=True):
     return 1 if load else 'a'
 
 
+@needs_get_overloads
 def test_overload_matches_via_explicit_literal():
     matches = [
         ov
@@ -369,6 +380,7 @@ def test_overload_matches_via_explicit_literal():
     assert matches[0].__annotations__['return'] == 'str'
 
 
+@needs_get_overloads
 def test_overload_matches_via_default():
     # `load` wasn't passed at all -- falls back to the True-overload's own default.
     matches = [ov for ov in get_overloads(_overload_true) if autolink._overload_matches(ov, {})]
@@ -376,6 +388,7 @@ def test_overload_matches_via_default():
     assert matches[0].__annotations__['return'] == 'int'
 
 
+@needs_get_overloads
 def test_overload_matches_none_for_unresolved_arg():
     # A non-literal argument can't be checked against either overload's Literal, so
     # neither is ruled in -- but neither is ruled out by name-only presence either.
@@ -399,6 +412,7 @@ def test_overload_matches_ignores_non_literal_annotation():
     assert autolink._overload_matches(overload_bool_annotation, {'load': False})
 
 
+@needs_get_overloads
 def test_resolve_via_overloads_unresolvable_matched_return_type():
     @overload
     def make_thing(load: Literal[True] = True) -> NonexistentClassXYZ: ...  # noqa: F821
@@ -411,6 +425,7 @@ def test_resolve_via_overloads_unresolvable_matched_return_type():
     assert return_type is None
 
 
+@needs_get_overloads
 def test_resolve_via_overloads_single_call_site():
     return_type = autolink._resolve_via_overloads(
         _overload_true, [_parse_call('_overload_true(load=False)')], {}
@@ -418,6 +433,7 @@ def test_resolve_via_overloads_single_call_site():
     assert return_type is str
 
 
+@needs_get_overloads
 def test_resolve_via_overloads_call_omits_argument():
     return_type = autolink._resolve_via_overloads(
         _overload_true, [_parse_call('_overload_true()')], {}
@@ -425,16 +441,19 @@ def test_resolve_via_overloads_call_omits_argument():
     assert return_type is int
 
 
+@needs_get_overloads
 def test_resolve_via_overloads_agreeing_call_sites():
     calls = [_parse_call('_overload_true(load=False)'), _parse_call('_overload_true(False)')]
     assert autolink._resolve_via_overloads(_overload_true, calls, {}) is str
 
 
+@needs_get_overloads
 def test_resolve_via_overloads_disagreeing_call_sites():
     calls = [_parse_call('_overload_true(load=False)'), _parse_call('_overload_true()')]
     assert autolink._resolve_via_overloads(_overload_true, calls, {}) is None
 
 
+@needs_get_overloads
 def test_resolve_via_overloads_non_literal_argument():
     calls = [_parse_call('_overload_true(load=some_variable)')]
     assert autolink._resolve_via_overloads(_overload_true, calls, {}) is None
@@ -465,6 +484,7 @@ def _download_thing(load=True):
     return _OverloadChainCandidatesReturnType() if load else 'a'
 
 
+@needs_get_overloads
 def test_call_chain_candidates_uses_matching_overload():
     # The default -- `load` omitted entirely -- should resolve to the dataset-returning
     # overload, not just the first-listed union member (which happens to agree here, but
@@ -476,6 +496,7 @@ def test_call_chain_candidates_uses_matching_overload():
     assert any(c.endswith('_OverloadChainCandidatesReturnType.method') for c in candidates)
 
 
+@needs_get_overloads
 def test_call_chain_candidates_uses_non_default_overload():
     # `load=False` returns `str`, not the dataset type a naive first-union-member guess
     # would pick -- `.method` isn't a `str` attribute, so no candidate should claim it is.

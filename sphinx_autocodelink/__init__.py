@@ -33,7 +33,13 @@ import shutil
 import sys
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import get_overloads
+
+# typing.get_overloads was added in 3.11; on 3.10 _resolve_via_overloads always falls back
+# to _call_return_type's own best-effort guess instead (see there for why that's safe).
+try:
+    from typing import get_overloads
+except ImportError:  # Python 3.10
+    get_overloads = None
 
 from docutils import nodes
 from sphinx import addnodes
@@ -420,8 +426,21 @@ def _resolve_via_overloads(
     parameters. A call that matches more than one overload -- or zero -- can't narrow
     anything down; different calls landing on different overloads means there's no one
     type to link the trailing attribute to. Either way the caller falls back to a single
-    best-effort guess instead (see :func:`_call_return_type`).
+    best-effort guess instead (see :func:`_call_return_type`). Always ``None`` on Python
+    3.10, which has no :func:`typing.get_overloads`.
     """
+    if get_overloads is None:
+        return None
+    return _match_overloads(func, calls, namespace)
+
+
+# Only reachable once get_overloads is confirmed to exist (Python 3.11+) -- excluded from
+# coverage rather than tested per-version, since which of this function or the guard above
+# is "the uncovered half" would otherwise flip depending on which Python ran the suite.
+def _match_overloads(  # pragma: no cover
+    func: Any, calls: list[ast.Call], namespace: dict[str, Any]
+) -> type | None:
+    """Do the actual matching for :func:`_resolve_via_overloads`."""
     overloads = get_overloads(func)
     if not overloads or not calls:
         return None
