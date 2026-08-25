@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import re
 import sys
 import types
 from types import SimpleNamespace
+from typing import Literal
+from typing import get_overloads
+from typing import overload
 
 from docutils import nodes
 from sphinx import addnodes
@@ -199,10 +203,20 @@ def test_call_return_type_resolves_via_fallback_namespace():
 
 
 def test_call_return_type_union_with_no_resolvable_member():
-    def make_widget_or_string() -> Widget | str:  # noqa: F821
+    def make_widget_or_gadget() -> Widget | Gadget:  # noqa: F821
         return ''
 
-    assert autolink._call_return_type(make_widget_or_string, {}) is None
+    assert autolink._call_return_type(make_widget_or_gadget, {}) is None
+
+
+def test_call_return_type_resolves_builtin():
+    # Under `from __future__ import annotations` (this file's own convention, and
+    # pyvista's), the annotation is a lazy string -- `str` itself is never looked up by
+    # Python, so it has to be found in the builtins fallback rather than the live object.
+    def make_string() -> str:
+        return ''
+
+    assert autolink._call_return_type(make_string, {}) is str
 
 
 class _CallReturnTypeUnionMember:
@@ -266,6 +280,211 @@ def test_call_chain_candidates_union_return_type():
         'download_thing', ('method',), {'download_thing': download_thing}
     )
     assert any(c.endswith('_CallChainCandidatesReturnType.method') for c in candidates)
+
+
+def _parse_call(source: str) -> ast.Call:
+    """Parse a single call expression, for the overload-matching helpers below."""
+    return ast.parse(source, mode='eval').body
+
+
+def test_literal_annotation_values_single():
+    assert autolink._literal_annotation_values('Literal[True]') == {True}
+
+
+def test_literal_annotation_values_multiple():
+    assert autolink._literal_annotation_values("Literal['a', 'b']") == {'a', 'b'}
+
+
+def test_literal_annotation_values_typing_prefix():
+    assert autolink._literal_annotation_values('typing.Literal[False]') == {False}
+
+
+def test_literal_annotation_values_not_a_literal():
+    assert autolink._literal_annotation_values('PolyData') is None
+
+
+def test_literal_annotation_values_unclosed_bracket():
+    assert autolink._literal_annotation_values('Literal[') is None
+
+
+def test_literal_annotation_values_body_not_literal_evaluable():
+    # Matches the `Literal[...]` shape, but its body is a name reference, not a literal.
+    assert autolink._literal_annotation_values('Literal[some_name]') is None
+
+
+def test_bound_literal_args_positional():
+    def f(load=True): ...
+
+    call = _parse_call('f(False)')
+    assert autolink._bound_literal_args(call, inspect.signature(f)) == {'load': False}
+
+
+def test_bound_literal_args_positional_non_literal_marked_unresolved():
+    def f(load=True): ...
+
+    call = _parse_call('f(some_variable)')
+    assert autolink._bound_literal_args(call, inspect.signature(f)) == {
+        'load': autolink._UNRESOLVED_ARG
+    }
+
+
+def test_bound_literal_args_keyword():
+    def f(load=True): ...
+
+    call = _parse_call('f(load=False)')
+    assert autolink._bound_literal_args(call, inspect.signature(f)) == {'load': False}
+
+
+def test_bound_literal_args_non_literal_marked_unresolved():
+    def f(load=True): ...
+
+    call = _parse_call('f(load=some_variable)')
+    assert autolink._bound_literal_args(call, inspect.signature(f)) == {
+        'load': autolink._UNRESOLVED_ARG
+    }
+
+
+def test_bound_literal_args_ignores_star_args():
+    def f(load=True): ...
+
+    call = _parse_call('f(*args, **kwargs)')
+    assert autolink._bound_literal_args(call, inspect.signature(f)) == {}
+
+
+@overload
+def _overload_true(load: Literal[True] = True) -> int: ...
+@overload
+def _overload_true(load: Literal[False]) -> str: ...
+def _overload_true(load=True):
+    return 1 if load else 'a'
+
+
+def test_overload_matches_via_explicit_literal():
+    matches = [
+        ov
+        for ov in get_overloads(_overload_true)
+        if autolink._overload_matches(ov, {'load': False})
+    ]
+    assert len(matches) == 1
+    assert matches[0].__annotations__['return'] == 'str'
+
+
+def test_overload_matches_via_default():
+    # `load` wasn't passed at all -- falls back to the True-overload's own default.
+    matches = [ov for ov in get_overloads(_overload_true) if autolink._overload_matches(ov, {})]
+    assert len(matches) == 1
+    assert matches[0].__annotations__['return'] == 'int'
+
+
+def test_overload_matches_none_for_unresolved_arg():
+    # A non-literal argument can't be checked against either overload's Literal, so
+    # neither is ruled in -- but neither is ruled out by name-only presence either.
+    matches = [
+        ov
+        for ov in get_overloads(_overload_true)
+        if autolink._overload_matches(ov, {'load': autolink._UNRESOLVED_ARG})
+    ]
+    assert matches == []
+
+
+def test_overload_matches_ignores_unannotated_param():
+    def overload_no_annotation(load=True) -> int: ...
+
+    assert autolink._overload_matches(overload_no_annotation, {'load': False})
+
+
+def test_overload_matches_ignores_non_literal_annotation():
+    def overload_bool_annotation(load: bool = True) -> int: ...
+
+    assert autolink._overload_matches(overload_bool_annotation, {'load': False})
+
+
+def test_resolve_via_overloads_unresolvable_matched_return_type():
+    @overload
+    def make_thing(load: Literal[True] = True) -> NonexistentClassXYZ: ...  # noqa: F821
+    @overload
+    def make_thing(load: Literal[False]) -> str: ...
+    def make_thing(load=True):
+        return None if load else ''
+
+    return_type = autolink._resolve_via_overloads(make_thing, [_parse_call('make_thing()')], {})
+    assert return_type is None
+
+
+def test_resolve_via_overloads_single_call_site():
+    return_type = autolink._resolve_via_overloads(
+        _overload_true, [_parse_call('_overload_true(load=False)')], {}
+    )
+    assert return_type is str
+
+
+def test_resolve_via_overloads_call_omits_argument():
+    return_type = autolink._resolve_via_overloads(
+        _overload_true, [_parse_call('_overload_true()')], {}
+    )
+    assert return_type is int
+
+
+def test_resolve_via_overloads_agreeing_call_sites():
+    calls = [_parse_call('_overload_true(load=False)'), _parse_call('_overload_true(False)')]
+    assert autolink._resolve_via_overloads(_overload_true, calls, {}) is str
+
+
+def test_resolve_via_overloads_disagreeing_call_sites():
+    calls = [_parse_call('_overload_true(load=False)'), _parse_call('_overload_true()')]
+    assert autolink._resolve_via_overloads(_overload_true, calls, {}) is None
+
+
+def test_resolve_via_overloads_non_literal_argument():
+    calls = [_parse_call('_overload_true(load=some_variable)')]
+    assert autolink._resolve_via_overloads(_overload_true, calls, {}) is None
+
+
+def test_resolve_via_overloads_no_overloads_registered():
+    def plain(load=True):
+        return load
+
+    calls = [_parse_call('plain(load=False)')]
+    assert autolink._resolve_via_overloads(plain, calls, {}) is None
+
+
+def test_resolve_via_overloads_no_calls():
+    assert autolink._resolve_via_overloads(_overload_true, [], {}) is None
+
+
+class _OverloadChainCandidatesReturnType:
+    def method(self) -> None:
+        """Do nothing."""
+
+
+@overload
+def _download_thing(load: Literal[True] = True) -> _OverloadChainCandidatesReturnType: ...
+@overload
+def _download_thing(load: Literal[False]) -> str: ...
+def _download_thing(load=True):
+    return _OverloadChainCandidatesReturnType() if load else 'a'
+
+
+def test_call_chain_candidates_uses_matching_overload():
+    # The default -- `load` omitted entirely -- should resolve to the dataset-returning
+    # overload, not just the first-listed union member (which happens to agree here, but
+    # only because of the fallback -- see the next test for where that would go wrong).
+    calls = [_parse_call('download_thing()')]
+    candidates = autolink._call_chain_candidates(
+        'download_thing', ('method',), {'download_thing': _download_thing}, calls
+    )
+    assert any(c.endswith('_OverloadChainCandidatesReturnType.method') for c in candidates)
+
+
+def test_call_chain_candidates_uses_non_default_overload():
+    # `load=False` returns `str`, not the dataset type a naive first-union-member guess
+    # would pick -- `.method` isn't a `str` attribute, so no candidate should claim it is.
+    calls = [_parse_call('download_thing(load=False)')]
+    candidates = autolink._call_chain_candidates(
+        'download_thing', ('method',), {'download_thing': _download_thing}, calls
+    )
+    assert not any(c.endswith('_OverloadChainCandidatesReturnType.method') for c in candidates)
+    assert any(c.endswith('str.method') for c in candidates)
 
 
 def test_call_chain_candidates_unresolvable_target():

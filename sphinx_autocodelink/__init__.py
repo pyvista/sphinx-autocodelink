@@ -8,9 +8,11 @@ with the resulting namespace; call :func:`setup` from that consumer's own
 Sphinx ``setup(app)`` to wire up link embedding. The one opt-in exception is
 ``autocodelink_doctest_blocks`` -- see :func:`setup`.
 
-Limitations: a call with no intermediate variable (``pv.Sphere().plot()``) only
-resolves its trailing attribute when the call's return annotation is a plain,
-resolvable class name. Root identifiers that only ever exist inside a script's
+Limitations: a call with no intermediate variable (``pv.Sphere().plot()``) resolves its
+trailing attribute from the call's return annotation -- matched against the call's own
+literal arguments when the callable is ``@overload``-decorated (e.g. a ``load: bool``
+toggle between a dataset and a bare filename), otherwise from the first resolvable member
+of a plain or unioned annotation. Root identifiers that only ever exist inside a script's
 own helper functions (never in its top-level namespace) need
 :func:`exec_with_local_scopes` instead of a plain ``exec()`` to resolve.
 """
@@ -18,6 +20,7 @@ own helper functions (never in its top-level namespace) need
 from __future__ import annotations
 
 import ast
+import builtins
 from dataclasses import dataclass
 import doctest
 from html import escape
@@ -30,6 +33,7 @@ import shutil
 import sys
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import get_overloads
 
 from docutils import nodes
 from sphinx import addnodes
@@ -146,6 +150,12 @@ class _NameCollector(ast.NodeVisitor):
         self.accessed: set[str] = set()
         #: e.g. ``('pv.Sphere', ('plot',))`` for ``pv.Sphere().plot``.
         self.call_chains: set[tuple[str, tuple[str, ...]]] = set()
+        #: Every call site recorded for each chain -- more than one when the same call
+        #: target/trailing pair is written more than once in a script, e.g. a downloader
+        #: called with different arguments. Feeds overload disambiguation (see
+        #: _resolve_via_overloads): a chain resolves precisely only when every one of its
+        #: call sites agrees on the same overload.
+        self.call_chain_calls: dict[tuple[str, tuple[str, ...]], list[ast.Call]] = {}
 
     def visit_Name(self, node: ast.Name) -> None:
         """Record a bare name access."""
@@ -165,7 +175,9 @@ class _NameCollector(ast.NodeVisitor):
         if isinstance(cursor, ast.Call):
             call_target = _dotted_name(cursor.func)
             if call_target is not None and parts:
-                self.call_chains.add((call_target, tuple(reversed(parts))))
+                key = (call_target, tuple(reversed(parts)))
+                self.call_chains.add(key)
+                self.call_chain_calls.setdefault(key, []).append(cursor)
         # e.g. `pv.Sphere().plot` -- keep walking the call's own arguments.
         self.visit(cursor)
 
@@ -295,10 +307,12 @@ def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
     """Return ``func``'s return type, if its annotation names a resolvable class.
 
     Checked against ``func``'s own module first, then every module already in
-    ``namespace`` -- covers aliases ``func``'s module only imports under ``TYPE_CHECKING``.
-    A union annotation (``PolyData | str``, common for a ``load: bool`` toggle between a
-    dataset and a bare filename) is tried member by member, in the order written, so the
-    first resolvable member wins.
+    ``namespace`` -- covers aliases ``func``'s module only imports under ``TYPE_CHECKING``
+    -- then the builtins, so a plain ``-> str`` still resolves under ``from __future__
+    import annotations`` (where the annotation is a lazy string, never actually looked up
+    by Python itself, rather than the live ``str`` object). A union annotation (``PolyData
+    | str``, common for a ``load: bool`` toggle between a dataset and a bare filename) is
+    tried member by member, in the order written, so the first resolvable member wins.
     """
     annotation = getattr(func, '__annotations__', {}).get('return')
     if isinstance(annotation, type):
@@ -307,6 +321,7 @@ def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
         return None
     namespaces = [getattr(func, '__globals__', {})]
     namespaces.extend(vars(obj) for obj in namespace.values() if inspect.ismodule(obj))
+    namespaces.append(vars(builtins))
     for member in annotation.split('|'):
         member = member.strip()
         if not _SIMPLE_NAME_RE.match(member):
@@ -319,14 +334,130 @@ def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
     return None
 
 
+#: A call argument that couldn't be resolved to a literal (a variable, an expression) --
+#: distinct from an argument that's simply absent, and equal to nothing a real annotation
+#: could ever name, so it correctly rules out every overload that constrains it.
+_UNRESOLVED_ARG = object()
+
+#: Matches a ``Literal[...]`` annotation string, with or without its ``typing.`` prefix.
+_LITERAL_RE = re.compile(r'\A(?:typing\.)?Literal\[(?P<body>.*)\]\Z')
+
+
+def _literal_annotation_values(annotation: str) -> set[Any] | None:
+    """Return the values a ``Literal[...]`` annotation string allows, or ``None``."""
+    match = _LITERAL_RE.match(annotation.strip())
+    if match is None:
+        return None
+    try:
+        parsed = ast.literal_eval(f'({match.group("body")},)')
+    except (ValueError, SyntaxError):
+        return None
+    return set(parsed)
+
+
+def _bound_literal_args(call: ast.Call, sig: inspect.Signature) -> dict[str, Any]:
+    """Return ``{param name: value}`` for a call's arguments, by binding position to name.
+
+    A non-literal argument (a variable, an expression) still gets an entry -- as
+    :data:`_UNRESOLVED_ARG` -- so a caller can tell "passed but unknown" apart from
+    "not passed at all", rather than silently falling back to the parameter's default
+    for an argument that was, in fact, given some other value.
+    """
+    bound: dict[str, Any] = {}
+    positional = [
+        param
+        for param in sig.parameters.values()
+        if param.kind
+        in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    for index, arg in enumerate(call.args):
+        if isinstance(arg, ast.Starred) or index >= len(positional):
+            continue
+        try:
+            bound[positional[index].name] = ast.literal_eval(arg)
+        except ValueError:
+            bound[positional[index].name] = _UNRESOLVED_ARG
+    for keyword in call.keywords:
+        if keyword.arg is None:  # **kwargs
+            continue
+        try:
+            bound[keyword.arg] = ast.literal_eval(keyword.value)
+        except ValueError:
+            bound[keyword.arg] = _UNRESOLVED_ARG
+    return bound
+
+
+def _overload_matches(overload: Any, args: dict[str, Any]) -> bool:
+    """Return whether every ``Literal``-typed parameter of ``overload`` accepts ``args``.
+
+    A parameter with no ``Literal[...]`` annotation never disqualifies a match. One that
+    has such an annotation but wasn't passed falls back to the *overload's own* default --
+    which is how a call that omits an argument still narrows down to the one overload
+    whose default actually applies (e.g. ``download_lucy()`` matching ``Literal[True] =
+    True``, not the ``Literal[False]`` overload, which has no default to fall back to).
+    """
+    sig = inspect.signature(overload)
+    for name, param in sig.parameters.items():
+        annotation = overload.__annotations__.get(name)
+        if not isinstance(annotation, str):
+            continue
+        values = _literal_annotation_values(annotation)
+        if values is None:
+            continue
+        effective = args.get(name, param.default)
+        if effective is inspect.Parameter.empty or effective not in values:
+            return False
+    return True
+
+
+def _resolve_via_overloads(
+    func: Any, calls: list[ast.Call], namespace: dict[str, Any]
+) -> type | None:
+    """Return the one return type every recorded call site agrees on, via ``@overload``.
+
+    Each call is matched against ``func``'s own ``@overload``-registered signatures by
+    comparing its literal arguments against each overload's ``Literal[...]``-typed
+    parameters. A call that matches more than one overload -- or zero -- can't narrow
+    anything down; different calls landing on different overloads means there's no one
+    type to link the trailing attribute to. Either way the caller falls back to a single
+    best-effort guess instead (see :func:`_call_return_type`).
+    """
+    overloads = get_overloads(func)
+    if not overloads or not calls:
+        return None
+    sig = inspect.signature(func)
+    resolved: set[type] = set()
+    for call in calls:
+        args = _bound_literal_args(call, sig)
+        matches = [overload for overload in overloads if _overload_matches(overload, args)]
+        if len(matches) != 1:
+            return None
+        return_type = _call_return_type(matches[0], namespace)
+        if return_type is None:
+            return None
+        resolved.add(return_type)
+    return next(iter(resolved)) if len(resolved) == 1 else None
+
+
 def _call_chain_candidates(
-    call_target: str, trailing: tuple[str, ...], namespace: dict[str, Any]
+    call_target: str,
+    trailing: tuple[str, ...],
+    namespace: dict[str, Any],
+    calls: list[ast.Call] | None = None,
 ) -> list[str]:
-    """Return candidate documented names for a call's trailing attribute chain."""
+    """Return candidate documented names for a call's trailing attribute chain.
+
+    ``calls`` narrows an overloaded callable to the one return type every recorded call
+    site actually resolves to (see :func:`_resolve_via_overloads`); only when that fails
+    -- no ``@overload``s, a non-literal argument, or calls that disagree -- does this fall
+    back to guessing from the plain function's own (possibly unioned) annotation.
+    """
     func = _resolve_object(call_target, namespace)
     if func is None or not inspect.isroutine(func):
         return []
-    return_type = _call_return_type(func, namespace)
+    return_type = _resolve_via_overloads(func, calls or [], namespace) or _call_return_type(
+        func, namespace
+    )
     if return_type is None:
         return []
     return _class_candidates(return_type, list(trailing))
@@ -341,7 +472,8 @@ def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _C
         if candidates:
             records.append(_Candidate(accessed, tuple(candidates)))
     for call_target, trailing in sorted(collected.call_chains):
-        candidates = _call_chain_candidates(call_target, trailing, namespace)
+        calls = collected.call_chain_calls[(call_target, trailing)]
+        candidates = _call_chain_candidates(call_target, trailing, namespace, calls)
         if candidates:
             records.append(_CallCandidate(call_target, trailing, tuple(candidates)))
     return records
