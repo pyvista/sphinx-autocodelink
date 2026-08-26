@@ -1181,8 +1181,15 @@ def _no_doctree(_docname):
 
 
 def _gallery_app(*, gallery_cards):
-    """Build a fake app with just enough of env/builder for render_gallery_carousel to run."""
+    """Build a fake app with just enough of env/builder for render_gallery_carousel to run.
+
+    ``srcdir`` points nowhere real -- ``_thumbnail_source_path`` globs it looking for a
+    thumbnail file, and a nonexistent directory just glob()s to nothing, same as a real
+    one this page's example was never actually rendered in. These tests are about
+    _render_ref_list's own gallery-cards routing, not thumbnail resolution.
+    """
     return SimpleNamespace(
+        srcdir='/nonexistent-test-srcdir',
         builder=SimpleNamespace(
             get_relative_uri=lambda _from, to: f'{to}.html',
             get_target_uri=lambda docname: f'{docname}.html',
