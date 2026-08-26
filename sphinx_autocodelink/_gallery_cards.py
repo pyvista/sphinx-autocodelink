@@ -46,7 +46,15 @@ _INTRO_MAX_CHARS = 95
 #: win here either: `max-width`/`max-height` always cap a `width`/`height` override
 #: regardless of selector specificity, so those need overriding explicitly too. Also
 #: fixes every thumbnail (image, title, and usage count alike) to the same box size,
-#: so cards with different title lengths still come out a uniform height.
+#: so cards with different title lengths still come out a uniform height. The title's
+#: own `line-height` is pinned explicitly too: `height: 2.6em` only clips cleanly at
+#: exactly two lines if each line is `1.3em` tall, and the surrounding theme's actual
+#: line-height isn't guaranteed to match that -- left unset, a taller line-height
+#: clips the second line mid-glyph, reading as if it collided with the usage count.
+#: `width: 100%` and `min-width: 0` on the title are needed too: the thumbcontainer is
+#: a flex column (Sphinx-Gallery's own layout), and a flex item's `min-width` defaults
+#: to `auto` -- its unwrapped content width -- rather than the container's, so a long
+#: title can overflow past both edges of its own card instead of wrapping to fit it.
 _CAROUSEL_STYLE = (
     '<style>'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden}'
@@ -54,8 +62,8 @@ _CAROUSEL_STYLE = (
     'width:100%;max-width:none;height:120px;max-height:none;'
     'object-fit:cover;display:block}'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbnail-title{'
-    'height:2.6em;overflow:hidden;display:-webkit-box;'
-    '-webkit-line-clamp:2;-webkit-box-orient:vertical}'
+    'width:100%;min-width:0;height:2.6em;line-height:1.3em;overflow:hidden;'
+    'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
     '.sphinx-autocodelink-gallery-carousel .sphinx-autocodelink-usage-count{'
     'height:1.2em;font-size:0.85em;opacity:0.75}'
     '</style>'

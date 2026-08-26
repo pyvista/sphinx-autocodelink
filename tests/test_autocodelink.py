@@ -662,6 +662,44 @@ def test_is_inside_desc_node_false_with_no_desc_ancestor():
     assert autolink._is_inside_desc_node(block) is False
 
 
+class _Widget:
+    """A minimal stand-in with a real ``@property``, for counts_as_use tests."""
+
+    @property
+    def name(self) -> str:
+        """Return a constant name."""
+        return 'widget'
+
+    def draw(self) -> None:
+        """Do nothing."""
+
+
+def test_records_for_call_site_counts_as_use():
+    records = autolink._records_for('Widget()\n', {'Widget': _Widget})
+    (record,) = [r for r in records if r.accessed == 'Widget']
+    assert record.counts_as_use is True
+
+
+def test_records_for_method_call_counts_as_use():
+    records = autolink._records_for('w.draw()\n', {'w': _Widget()})
+    (record,) = [r for r in records if r.accessed == 'w.draw']
+    assert record.counts_as_use is True
+
+
+def test_records_for_property_read_counts_as_use():
+    records = autolink._records_for('w.name\n', {'w': _Widget()})
+    (record,) = [r for r in records if r.accessed == 'w.name']
+    assert record.counts_as_use is True
+
+
+def test_records_for_bare_mention_does_not_count_as_use():
+    # Neither called nor a property read -- e.g. `isinstance(w, Widget)`, or a bare
+    # variable passed around without being invoked or having a property read off it.
+    records = autolink._records_for('print(w)\n', {'w': _Widget()})
+    (record,) = [r for r in records if r.accessed == 'w']
+    assert record.counts_as_use is False
+
+
 def _doctree_with_doctest_blocks(*sources):
     """Return a document whose children are ``doctest_block`` nodes, one per source."""
     document = nodes.document(settings=SimpleNamespace(), reporter=SimpleNamespace())
@@ -727,7 +765,8 @@ def test_record_bare_doctest_blocks_each_block_gets_a_fresh_namespace():
     app = SimpleNamespace(env=env, config=SimpleNamespace(autocodelink_doctest_blocks=True))
     autolink._record_bare_doctest_blocks(app, doctree)
     records = getattr(env, autolink._ENV_ATTR)['index']
-    assert records == [autolink._Candidate('shared', ('builtins.int',))]
+    # Bare name, not called and not a property read -- doesn't count as a "use".
+    assert records == [autolink._Candidate('shared', ('builtins.int',), counts_as_use=False)]
 
 
 def test_record_namespace_to_disk_no_records(tmp_path):

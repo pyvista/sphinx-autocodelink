@@ -123,6 +123,13 @@ class _Candidate:
 
     accessed: str
     candidates: tuple[str, ...]
+    #: Whether this occurrence is a real usage -- a call site or a live ``@property``
+    #: read -- for ``autocodelink_sort = 'frequency'``. False for a bare mention with
+    #: neither (a type hint, an ``isinstance`` check, or a variable simply referenced
+    #: without being called or having a property read off it). Doesn't affect linking
+    #: or the "Used In" list itself, which still treats every resolved reference as
+    #: "used" -- only the frequency count does not.
+    counts_as_use: bool = True
 
 
 @dataclass(frozen=True)
@@ -157,6 +164,9 @@ class _NameCollector(ast.NodeVisitor):
 
     def __init__(self) -> None:
         self.accessed: set[str] = set()
+        #: Dotted names that were the direct target of a call somewhere in the source
+        #: (``pv.Plotter()``, ``pl.add_mesh(...)``) -- feeds ``_Candidate.counts_as_use``.
+        self.called: set[str] = set()
         #: e.g. ``('pv.Sphere', ('plot',))`` for ``pv.Sphere().plot``.
         self.call_chains: set[tuple[str, tuple[str, ...]]] = set()
         #: Every call site recorded for each chain -- more than one when the same call
@@ -169,6 +179,13 @@ class _NameCollector(ast.NodeVisitor):
     def visit_Name(self, node: ast.Name) -> None:
         """Record a bare name access."""
         self.accessed.add(node.id)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """Record a call's own target as directly called, then keep walking."""
+        target = _dotted_name(node.func)
+        if target is not None:
+            self.called.add(target)
+        self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         """Record a dotted chain rooted at a plain name, or a call's trailing chain."""
@@ -289,6 +306,30 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
 
         return list(_module_path_candidates(obj.__class__, []))
     return []
+
+
+def _is_property_access(accessed: str, namespace: dict[str, Any]) -> bool:
+    """Return whether resolving ``accessed`` reads a live ``@property`` somewhere along it.
+
+    A narrower walk than :func:`_candidate_names`'s own: it only answers whether *some*
+    attribute step is a genuine property read (``pl.camera_position``), not a bare class
+    or module reference (``pv.Plotter`` in a type hint) or an uncalled bound method.
+    """
+    parts = accessed.split('.')
+    for split in range(len(parts)):
+        head = '.'.join(parts[: split + 1])
+        if head not in namespace:
+            continue
+        obj = namespace[head]
+        for level in parts[split + 1 :]:
+            if isinstance(getattr(type(obj), level, None), property):
+                return True
+            try:
+                obj = getattr(obj, level)
+            except Exception:  # noqa: BLE001 -- arbitrary objects can raise anything
+                return False
+        return False
+    return False
 
 
 #: Matches a bare dotted class name (``PolyData``); rejects ``Widget | str``, ``list[int]``.
@@ -492,7 +533,8 @@ def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _C
     for accessed in sorted(collected.accessed):
         candidates = _candidate_names(accessed, namespace)
         if candidates:
-            records.append(_Candidate(accessed, tuple(candidates)))
+            counts_as_use = accessed in collected.called or _is_property_access(accessed, namespace)
+            records.append(_Candidate(accessed, tuple(candidates), counts_as_use))
     for call_target, trailing in sorted(collected.call_chains):
         calls = collected.call_chain_calls[(call_target, trailing)]
         candidates = _call_chain_candidates(call_target, trailing, namespace, calls)
@@ -690,7 +732,11 @@ def _to_jsonable(record: _Candidate | _CallCandidate) -> dict[str, Any]:
             'trailing': list(record.trailing),
             'candidates': list(record.candidates),
         }
-    return {'accessed': record.accessed, 'candidates': list(record.candidates)}
+    return {
+        'accessed': record.accessed,
+        'candidates': list(record.candidates),
+        'counts_as_use': record.counts_as_use,
+    }
 
 
 def _from_jsonable(entry: dict[str, Any]) -> _Candidate | _CallCandidate:
@@ -699,7 +745,9 @@ def _from_jsonable(entry: dict[str, Any]) -> _Candidate | _CallCandidate:
         return _CallCandidate(
             entry['call_target'], tuple(entry['trailing']), tuple(entry['candidates'])
         )
-    return _Candidate(entry['accessed'], tuple(entry['candidates']))
+    return _Candidate(
+        entry['accessed'], tuple(entry['candidates']), entry.get('counts_as_use', True)
+    )
 
 
 def _load_disk_records(
@@ -876,7 +924,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         for candidate in candidates:
             if isinstance(candidate, _CallCandidate):
                 call_occurrences[(candidate.call_target, candidate.trailing)] += 1
-            else:
+            elif candidate.counts_as_use:
                 name_occurrences[candidate.accessed] += 1
 
         # Dedup: the same accessed name or call chain can be recorded multiple times.

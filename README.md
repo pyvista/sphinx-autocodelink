@@ -184,11 +184,13 @@ a heavily-used name's index entry doesn't turn into a wall of links.
 
 - `'alphabetical'` (the default) -- by display text, same as always.
 - `'frequency'` -- by how many times each referencing page's own recorded source actually used
-  the target, most-used first, ties broken alphabetically. A page referencing the target more
-  than once (through more than one code block, or more than one spelling of the same object)
-  counts every one of them, not just whether it referenced it at all -- so the "N more" collapse
-  above tucks away the least-used pages, not an alphabetical tail. Each entry also shows its own
-  count in plain text after the link, e.g. `pkg.thing (3 uses)`.
+  the target, most-used first, ties broken alphabetically. "Used" means a call site or a live
+  `@property` read (`pkg.thing()`, `mesh.points`) -- a bare mention with neither, like a type hint
+  or an `isinstance` check, doesn't count. A page referencing the target more than once (through
+  more than one code block, or more than one spelling of the same object) counts every one of
+  them, not just whether it referenced it at all -- so the "N more" collapse above tucks away the
+  least-used pages, not an alphabetical tail. Each entry also shows its own count in plain text
+  after the link, e.g. `pkg.thing (3 uses)`.
 
 ```python
 autocodelink_sort = 'frequency'
