@@ -1073,7 +1073,9 @@ def _render_ref_list(
     if getattr(app.config, 'autocodelink_gallery_cards', False):
         gallery_refs = {ref for ref in refs if categories.get(ref) == DEFAULT_GALLERY_CATEGORY}
         if gallery_refs:
-            carousel = render_gallery_carousel(sorted(gallery_refs), docname=docname, app=app)
+            carousel = render_gallery_carousel(
+                sorted(gallery_refs), docname=docname, app=app, usage_counts=usage_counts
+            )
             other_refs = [ref for ref in refs if ref not in gallery_refs]
             if not other_refs:
                 return carousel
@@ -1110,7 +1112,9 @@ def _render_ref_list(
                 # the destination itself, so it shouldn't read (or click) like one.
                 count = usage_counts.get(ref, 0)
                 uses = 'use' if count == 1 else 'uses'
-                count_suffix = f' <span class="sphinx-autocodelink-usage-count">({count} {uses})</span>'
+                count_suffix = (
+                    f' <span class="sphinx-autocodelink-usage-count">({count} {uses})</span>'
+                )
             items.append(f'<li><a href="{href}">{text}</a>{count_suffix}</li>')
         return ''.join(items)
 

@@ -45,8 +45,8 @@ _INTRO_MAX_CHARS = 95
 #: oversized image. A `.sphx-glr-thumbcontainer img` selector alone isn't enough to
 #: win here either: `max-width`/`max-height` always cap a `width`/`height` override
 #: regardless of selector specificity, so those need overriding explicitly too. Also
-#: fixes every thumbnail (image and title alike) to the same box size, so cards with
-#: different title lengths still come out a uniform height.
+#: fixes every thumbnail (image, title, and usage count alike) to the same box size,
+#: so cards with different title lengths still come out a uniform height.
 _CAROUSEL_STYLE = (
     '<style>'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden}'
@@ -56,6 +56,8 @@ _CAROUSEL_STYLE = (
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbnail-title{'
     'height:2.6em;overflow:hidden;display:-webkit-box;'
     '-webkit-line-clamp:2;-webkit-box-orient:vertical}'
+    '.sphinx-autocodelink-gallery-carousel .sphinx-autocodelink-usage-count{'
+    'height:1.2em;font-size:0.85em;opacity:0.75}'
     '</style>'
 )
 
@@ -126,14 +128,26 @@ def _page_intro(app: Sphinx, docname: str) -> str:
     return text[: _INTRO_MAX_CHARS - 1].rstrip() + '…'
 
 
-def _thumbnail_html(app: Sphinx, *, docname: str, ref: str, title: str) -> str:
-    """Render one Sphinx-Gallery-style thumbnail card for ``ref``, linked from ``docname``."""
+def _thumbnail_html(
+    app: Sphinx, *, docname: str, ref: str, title: str, usage_count: int | None
+) -> str:
+    """Render one Sphinx-Gallery-style thumbnail card for ``ref``, linked from ``docname``.
+
+    ``usage_count`` -- how many times ``ref``'s own recorded source used the target this
+    carousel is a "Used In" entry for -- is shown as a subtitle line under the title when
+    given (``autocodelink_sort == 'frequency'``; see :func:`render_gallery_carousel`),
+    None to omit it entirely rather than show a meaningless "0 uses".
+    """
     href = app.builder.get_relative_uri(docname, ref)
     source_path = _thumbnail_source_path(app, ref)
     thumb_href = _thumbnail_href(app, docname, source_path) if source_path is not None else None
     image = f'<img src="{thumb_href}" alt="">' if thumb_href is not None else ''
     escaped_title = escape(title)
     tooltip = escape(_page_intro(app, ref))
+    count_html = ''
+    if usage_count is not None:
+        uses = 'use' if usage_count == 1 else 'uses'
+        count_html = f'<div class="sphinx-autocodelink-usage-count">{usage_count} {uses}</div>'
     return (
         f'<div class="sphx-glr-thumbcontainer" tooltip="{tooltip}">'
         f'{image}'
@@ -143,6 +157,7 @@ def _thumbnail_html(app: Sphinx, *, docname: str, ref: str, title: str) -> str:
         # below is what's actually shown.
         f'<p><a class="reference internal" href="{href}"><span>{escaped_title}</span></a></p>'
         f'<div class="sphx-glr-thumbnail-title">{escaped_title}</div>'
+        f'{count_html}'
         '</div>'
     )
 
@@ -160,16 +175,39 @@ def _card_html(thumbnails: list[str]) -> str:
     )
 
 
-def render_gallery_carousel(refs: list[str], *, docname: str, app: Sphinx) -> str:
+def render_gallery_carousel(
+    refs: list[str],
+    *,
+    docname: str,
+    app: Sphinx,
+    usage_counts: dict[str, int] | None = None,
+) -> str:
     """Render ``refs`` as a card-carousel of Sphinx-Gallery-style thumbnail cards.
 
-    Sorted by title, like a plain link list would be; ``_THUMBNAILS_PER_CARD`` thumbnails
-    per card, as many cards as needed, in one horizontally-scrolling carousel -- this
-    replaces the usual "N more" collapse entirely, at any length.
+    Sorted by title (``autocodelink_sort``'s default, ``'alphabetical'``), or by
+    ``usage_counts`` descending when it's ``'frequency'`` instead, ties broken
+    alphabetically -- the same ordering :func:`sphinx_autocodelink._render_ref_list`
+    applies to a plain link list, and each card's own count shown the same way: as
+    plain text, not part of the link. ``_THUMBNAILS_PER_CARD`` thumbnails per card, as
+    many cards as needed, in one horizontally-scrolling carousel -- this replaces the
+    usual "N more" collapse entirely, at any length.
     """
-    labeled = sorted((_docname_title(app, ref), ref) for ref in refs)
+    usage_counts = usage_counts or {}
+    show_counts = getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency'
+    pairs = [(_docname_title(app, ref), ref) for ref in refs]
+    if show_counts:
+        labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
+    else:
+        labeled = sorted(pairs)
     thumbnails = [
-        _thumbnail_html(app, docname=docname, ref=ref, title=title) for title, ref in labeled
+        _thumbnail_html(
+            app,
+            docname=docname,
+            ref=ref,
+            title=title,
+            usage_count=usage_counts.get(ref, 0) if show_counts else None,
+        )
+        for title, ref in labeled
     ]
     cards = [
         _card_html(thumbnails[i : i + _THUMBNAILS_PER_CARD])
