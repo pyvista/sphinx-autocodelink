@@ -1107,9 +1107,8 @@ def _render_ref_list(
     source actually used this target -- when it's ``'frequency'`` instead, ties broken
     alphabetically. ``usage_counts`` missing a ref (or not supplied at all) counts as 0,
     same as an unresolvable entry sinking to the bottom of its tied group rather than
-    erroring. In ``'frequency'`` mode, each entry also shows its own count in plain text
-    after the link (e.g. "(3 uses)") -- outside the ``<a>``, since it explains the
-    ranking rather than being part of the destination itself.
+    erroring. With ``autocodelink_show_usage_count`` on -- independent of sort mode --
+    each entry also shows its own count in plain text after the link (e.g. "(3 uses)").
 
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
     with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
@@ -1141,6 +1140,7 @@ def _render_ref_list(
             )
 
     sort_mode = getattr(app.config, 'autocodelink_sort', 'alphabetical')
+    show_counts = getattr(app.config, 'autocodelink_show_usage_count', False)
     pairs = [(_docname_title(app, ref) if show_titles else ref, ref) for ref in refs]
     if sort_mode == 'frequency':
         labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
@@ -1159,7 +1159,7 @@ def _render_ref_list(
             elif category == DEFAULT_GALLERY_CATEGORY:
                 text = f'{_STD_REF_OPEN}{text}{_STD_REF_CLOSE}'
             count_suffix = ''
-            if sort_mode == 'frequency':
+            if show_counts:
                 # Outside the <a> -- this is what explains the ranking, not part of
                 # the destination itself, so it shouldn't read (or click) like one.
                 count = usage_counts.get(ref, 0)
@@ -1544,6 +1544,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
     app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
     app.add_config_value('autocodelink_sort', 'alphabetical', rebuild='html')
+    app.add_config_value('autocodelink_show_usage_count', False, rebuild='html')
     app.add_config_value('autocodelink_gallery_cards', False, rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)

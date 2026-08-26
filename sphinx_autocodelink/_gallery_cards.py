@@ -183,8 +183,8 @@ def _thumbnail_html(
 
     ``usage_count`` -- how many times ``ref``'s own recorded source used the target this
     carousel is a "Used In" entry for -- is shown as a subtitle line under the title when
-    given (``autocodelink_sort == 'frequency'``; see :func:`render_gallery_carousel`),
-    None to omit it entirely rather than show a meaningless "0 uses".
+    given (``autocodelink_show_usage_count``; see :func:`render_gallery_carousel`), None
+    to omit it entirely rather than show a meaningless "0 uses".
     """
     href = app.builder.get_relative_uri(docname, ref)
     source_path = _thumbnail_source_path(app, ref)
@@ -235,15 +235,17 @@ def render_gallery_carousel(
     Sorted by title (``autocodelink_sort``'s default, ``'alphabetical'``), or by
     ``usage_counts`` descending when it's ``'frequency'`` instead, ties broken
     alphabetically -- the same ordering :func:`sphinx_autocodelink._render_ref_list`
-    applies to a plain link list, and each card's own count shown the same way: as
-    plain text, not part of the link. ``_THUMBNAILS_PER_CARD`` thumbnails per card, as
-    many cards as needed, in one horizontally-scrolling carousel -- this replaces the
-    usual "N more" collapse entirely, at any length.
+    applies to a plain link list. With ``autocodelink_show_usage_count`` on --
+    independent of sort mode -- each card's own count is shown the same way that
+    function shows it: as plain text, not part of the link. ``_THUMBNAILS_PER_CARD``
+    thumbnails per card, as many cards as needed, in one horizontally-scrolling
+    carousel -- this replaces the usual "N more" collapse entirely, at any length.
     """
     usage_counts = usage_counts or {}
-    show_counts = getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency'
+    sort_frequency = getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency'
+    show_counts = getattr(app.config, 'autocodelink_show_usage_count', False)
     pairs = [(_docname_title(app, ref), ref) for ref in refs]
-    if show_counts:
+    if sort_frequency:
         labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
     else:
         labeled = sorted(pairs)
