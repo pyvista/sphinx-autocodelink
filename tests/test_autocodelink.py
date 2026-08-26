@@ -999,6 +999,7 @@ def test_setup():
         'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
         'autocodelink_autodoc_backrefs': (False, 'html'),
         'autocodelink_category_labels': ({}, 'html'),
+        'autocodelink_category_order': ((), 'html'),
         'autocodelink_doctest_blocks': (False, 'html'),
         'autocodelink_sort': ('alphabetical', 'html'),
         'autocodelink_show_usage_count': (False, 'html'),
@@ -1247,6 +1248,68 @@ def test_render_grouped_refs_sorts_by_the_renamed_label_not_the_category():
     )
     labels = re.findall(r'<strong>([^<]*)</strong>', html)
     assert labels == ['Alpha', 'Beta', 'Zeta']
+
+
+def test_sorted_categories_defaults_to_alphabetical_by_label():
+    groups = {'Sphinx Gallery': ['c'], 'Docstring Examples': ['a'], 'Documentation': ['b']}
+    result = autolink._sorted_categories(groups, {}, (), 'index')
+    assert result == ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
+
+
+def test_sorted_categories_respects_explicit_order():
+    groups = {'Sphinx Gallery': ['c'], 'Docstring Examples': ['a'], 'Documentation': ['b']}
+    order = ('Docstring Examples', 'Documentation', 'Sphinx Gallery')
+    result = autolink._sorted_categories(groups, {}, order, 'index')
+    assert result == list(order)
+
+
+def test_sorted_categories_gallery_last_via_partial_order():
+    groups = {'Sphinx Gallery': ['c'], 'Docstring Examples': ['a'], 'Documentation': ['b']}
+    order = ('Docstring Examples', 'Documentation')
+    result = autolink._sorted_categories(groups, {}, order, 'index')
+    assert result == ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
+
+
+def test_sorted_categories_warns_about_a_category_missing_from_the_order(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        autolink._logger, 'warning', lambda *args, **kwargs: warnings.append((args, kwargs))
+    )
+    groups = {'Sphinx Gallery': ['c'], 'Docstring Examples': ['a']}
+    autolink._sorted_categories(groups, {}, ('Docstring Examples',), 'index')
+    assert len(warnings) == 1
+    assert "'Sphinx Gallery'" in warnings[0][0][2]
+    assert warnings[0][1]['location'] == 'index'
+
+
+def test_sorted_categories_no_warning_when_order_is_complete(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        autolink._logger, 'warning', lambda *args, **kwargs: warnings.append((args, kwargs))
+    )
+    groups = {'Sphinx Gallery': ['c'], 'Docstring Examples': ['a']}
+    autolink._sorted_categories(groups, {}, ('Docstring Examples', 'Sphinx Gallery'), 'index')
+    assert warnings == []
+
+
+def test_render_grouped_refs_sorts_by_explicit_category_order():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(
+            autocodelink_category_labels={},
+            autocodelink_category_order=('Sphinx Gallery', 'Docstring Examples'),
+        ),
+    )
+    html = autolink._render_grouped_refs(
+        ['a', 'b'],
+        docname='index',
+        app=app,
+        categories={'a': 'Docstring Examples', 'b': 'Sphinx Gallery'},
+        show_titles=False,
+        group_mode='always',
+    )
+    labels = re.findall(r'<strong>([^<]*)</strong>', html)
+    assert labels == ['Sphinx Gallery', 'Docstring Examples']
 
 
 def test_render_grouped_refs_threads_usage_counts_into_each_group():

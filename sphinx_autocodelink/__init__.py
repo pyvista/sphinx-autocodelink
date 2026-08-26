@@ -1186,6 +1186,33 @@ def _render_ref_list(
     )
 
 
+def _sorted_categories(
+    groups: dict[str, list[str]],
+    category_labels: dict[str, str],
+    category_order: tuple[str, ...],
+    docname: str,
+) -> list[str]:
+    """Return ``groups``' own categories in render order (see ``autocodelink_category_order``)."""
+    if not category_order:
+        return sorted(groups, key=lambda c: category_labels.get(c, c))
+
+    order_index = {category: i for i, category in enumerate(category_order)}
+    missing = sorted(c for c in groups if c not in order_index)
+    if missing:
+        noun = 'category' if len(missing) == 1 else 'categories'
+        _logger.warning(
+            'autocodelink: %s not in autocodelink_category_order, '
+            'sorted alphabetically at the end: %s',
+            noun,
+            ', '.join(repr(c) for c in missing),
+            location=docname,
+        )
+    return sorted(
+        groups,
+        key=lambda c: (order_index.get(c, len(category_order)), category_labels.get(c, c)),
+    )
+
+
 def _render_grouped_refs(
     refs: list[str],
     *,
@@ -1213,11 +1240,9 @@ def _render_grouped_refs(
         )
 
     category_labels = getattr(app.config, 'autocodelink_category_labels', {})
+    category_order = getattr(app.config, 'autocodelink_category_order', ())
     parts = []
-    # Sorted by each group's own *displayed* label, not its underlying category string --
-    # a renamed category (autocodelink_category_labels) must sort into place among the
-    # names readers actually see, not the internal ones they never do.
-    for category in sorted(groups, key=lambda c: category_labels.get(c, c)):
+    for category in _sorted_categories(groups, category_labels, category_order, docname):
         label = category_labels.get(category, category)
         ref_list = _render_ref_list(
             groups[category],
@@ -1539,6 +1564,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
+    app.add_config_value('autocodelink_category_order', (), rebuild='html')
     app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
     app.add_config_value('autocodelink_sort', 'alphabetical', rebuild='html')
     app.add_config_value('autocodelink_show_usage_count', False, rebuild='html')
