@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+from collections import Counter
 from dataclasses import dataclass
 import doctest
 from html import escape
@@ -852,11 +853,27 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
     aliased = frozenset(_aliased_names(app))
     external = _intersphinx_inventory(app)
     backrefs: dict[str, set[str]] = {}
+    #: Per resolved target name, how many times each referencing page's own recorded
+    #: source actually used it -- feeds ``autocodelink_sort = 'frequency'``. A page can
+    #: accumulate more than one record for the same target (e.g. Sphinx-Gallery records
+    #: one block per code cell, and more than one cell in the same example can reference
+    #: it), which the dedup below deliberately collapses for link-embedding purposes but
+    #: not for this count.
+    usage_counts: dict[str, dict[str, int]] = {}
 
     for docname, candidates in records.items():
         out_file = Path(app.outdir) / (app.builder.get_target_uri(docname))
         if not out_file.exists():
             continue
+
+        # Raw occurrence counts, independent of the dedup below.
+        name_occurrences: Counter[str] = Counter()
+        call_occurrences: Counter[tuple[str, tuple[str, ...]]] = Counter()
+        for candidate in candidates:
+            if isinstance(candidate, _CallCandidate):
+                call_occurrences[(candidate.call_target, candidate.trailing)] += 1
+            else:
+                name_occurrences[candidate.accessed] += 1
 
         # Dedup: the same accessed name or call chain can be recorded multiple times.
         resolved_names: dict[str, str] = {}
@@ -878,6 +895,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     name, link = resolved
                     resolved_calls[call_key] = link
                     backrefs.setdefault(name, set()).add(docname)
+                    usage_counts.setdefault(name, {})[docname] = call_occurrences[call_key]
             else:
                 if candidate.accessed in resolved_names:
                     continue
@@ -893,6 +911,9 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     name, link = resolved
                     resolved_names[candidate.accessed] = link
                     backrefs.setdefault(name, set()).add(docname)
+                    usage_counts.setdefault(name, {})[docname] = name_occurrences[
+                        candidate.accessed
+                    ]
         if not resolved_names and not resolved_calls:
             continue
 
@@ -944,7 +965,13 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
 
     if index_docs:
         _fill_index_placeholders(
-            app, index_docs, backrefs, local=local, external=external, categories=categories
+            app,
+            index_docs,
+            backrefs,
+            local=local,
+            external=external,
+            categories=categories,
+            usage_counts=usage_counts,
         )
 
 
@@ -1007,6 +1034,7 @@ def _render_ref_list(
     app: Sphinx,
     show_titles: bool,
     categories: dict[str, str] | None = None,
+    usage_counts: dict[str, int] | None = None,
 ) -> str:
     """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``, sorted by display text.
 
@@ -1018,13 +1046,26 @@ def _render_ref_list(
     custom-tagged one) is a plain page link -- there's no similarly specific real target to
     point at, just "some page, somewhere in the docs".
 
+    Sorted by display text (``autocodelink_sort``'s default, ``'alphabetical'``), or by
+    ``usage_counts`` descending -- how many times each referencing page's own recorded
+    source actually used this target -- when it's ``'frequency'`` instead, ties broken
+    alphabetically. ``usage_counts`` missing a ref (or not supplied at all) counts as 0,
+    same as an unresolvable entry sinking to the bottom of its tied group rather than
+    erroring.
+
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
     with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
     picks up the same indentation and spacing as its sibling entries for free, from whatever
-    list styling the theme already applies, rather than trying to replicate it.
+    list styling the theme already applies, rather than trying to replicate it. Frequency order
+    means the collapsed-away entries are always the least-used ones, not an alphabetical cutoff.
     """
     categories = categories or {}
-    labeled = sorted((_docname_title(app, ref) if show_titles else ref, ref) for ref in refs)
+    usage_counts = usage_counts or {}
+    pairs = [(_docname_title(app, ref) if show_titles else ref, ref) for ref in refs]
+    if getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency':
+        labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
+    else:
+        labeled = sorted(pairs)
 
     def render(entries: list[tuple[str, str]]) -> str:
         """Render a sequence of (label, ref) pairs as ``<li>`` entries."""
@@ -1067,6 +1108,7 @@ def _render_grouped_refs(
     categories: dict[str, str],
     show_titles: bool,
     group_mode: str,
+    usage_counts: dict[str, int] | None = None,
 ) -> str:
     """Render ``refs`` as one flat list, or grouped by category depending on ``group_mode``."""
     groups: dict[str, list[str]] = {}
@@ -1076,7 +1118,12 @@ def _render_grouped_refs(
     should_group = group_mode == 'always' or (group_mode != 'never' and len(groups) > 1)
     if not should_group:
         return _render_ref_list(
-            refs, docname=docname, app=app, show_titles=show_titles, categories=categories
+            refs,
+            docname=docname,
+            app=app,
+            show_titles=show_titles,
+            categories=categories,
+            usage_counts=usage_counts,
         )
 
     category_labels = getattr(app.config, 'autocodelink_category_labels', {})
@@ -1092,6 +1139,7 @@ def _render_grouped_refs(
             app=app,
             show_titles=show_titles,
             categories=categories,
+            usage_counts=usage_counts,
         )
         parts.append(
             '<div class="sphinx-autocodelink-index-group">'
@@ -1110,6 +1158,7 @@ def _render_index_entry(
     categories: dict[str, str],
     show_titles: bool,
     group_mode: str,
+    usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> str:
     """Render one target name's list of referencing pages, or ``''`` if it has none.
 
@@ -1126,6 +1175,7 @@ def _render_index_entry(
         categories=categories,
         show_titles=show_titles,
         group_mode=group_mode,
+        usage_counts=(usage_counts or {}).get(target),
     )
 
 
@@ -1141,6 +1191,7 @@ def _render_index_html(
     hide_empty: bool = False,
     show_titles: bool = True,
     group_mode: str = 'auto',
+    usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> str:
     """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
     if name:
@@ -1152,6 +1203,7 @@ def _render_index_html(
             categories=categories,
             show_titles=show_titles,
             group_mode=group_mode,
+            usage_counts=usage_counts,
         )
     else:
         body = _render_full_index(
@@ -1163,6 +1215,7 @@ def _render_index_html(
             categories=categories,
             show_titles=show_titles,
             group_mode=group_mode,
+            usage_counts=usage_counts,
         )
 
     if not body:
@@ -1182,8 +1235,10 @@ def _render_full_index(
     categories: dict[str, str],
     show_titles: bool = True,
     group_mode: str = 'auto',
+    usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> str:
     """Render the site-wide index: every resolved name and its referencing pages."""
+    usage_counts = usage_counts or {}
     entries = []
     for target in sorted(backrefs):
         # Exclude self-references -- see _render_index_entry.
@@ -1201,6 +1256,7 @@ def _render_full_index(
             categories=categories,
             show_titles=show_titles,
             group_mode=group_mode,
+            usage_counts=usage_counts.get(target),
         )
         entries.append(f'<dt>{heading}</dt><dd>{body}</dd>')
     if not entries:
@@ -1232,6 +1288,7 @@ def _fill_index_placeholders(
     local: dict[str, tuple[str, str]],
     external: dict[str, str],
     categories: dict[str, str],
+    usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> None:
     """Replace every ``.. autocodelink-index::`` placeholder with its rendered backreferences."""
 
@@ -1248,6 +1305,7 @@ def _fill_index_placeholders(
             hide_empty=opts['hide_empty'],
             show_titles=opts['titles'],
             group_mode=opts['group'],
+            usage_counts=usage_counts,
         )
 
     def _render_section(match: re.Match[str], docname: str, removed_ids: set[str]) -> str:
@@ -1338,6 +1396,12 @@ def setup(app: Sphinx) -> dict[str, bool]:
     docstring, via ``autodoc-process-docstring``. Objects with no
     references get nothing appended, not an empty "No references found."
 
+    ``autocodelink_sort`` (default ``'alphabetical'``) chooses how each rendered list of
+    referencing pages is ordered. ``'frequency'`` instead ranks by how many times each
+    referencing page's own recorded source actually used the target -- most-used first,
+    ties broken alphabetically -- so the "N more" collapse (see :func:`_render_ref_list`)
+    tucks away the least-used pages rather than an alphabetical tail.
+
     ``autocodelink_category_labels`` (default ``{}``) renames a recorded
     category's own display label in grouped ``.. autocodelink-index::``
     output, e.g. ``{'Sphinx Gallery': 'Gallery Examples'}`` -- without
@@ -1383,6 +1447,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
     app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
+    app.add_config_value('autocodelink_sort', 'alphabetical', rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}
