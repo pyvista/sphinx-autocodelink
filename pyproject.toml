@@ -9,6 +9,7 @@ dev = [
   'pytest',
   'pytest-cov',
   'sphinx',
+  'sphinx-design',
   'sphinx-gallery',
 ]
 

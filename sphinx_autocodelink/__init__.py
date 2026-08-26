@@ -46,6 +46,8 @@ from docutils import nodes
 from sphinx import addnodes
 from sphinx.util import logging as sphinx_logging
 
+from sphinx_autocodelink._gallery_cards import render_gallery_carousel
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import CodeType
@@ -1058,9 +1060,28 @@ def _render_ref_list(
     picks up the same indentation and spacing as its sibling entries for free, from whatever
     list styling the theme already applies, rather than trying to replicate it. Frequency order
     means the collapsed-away entries are always the least-used ones, not an alphabetical cutoff.
+    With ``autocodelink_gallery_cards`` enabled, :data:`DEFAULT_GALLERY_CATEGORY` entries render
+    as a thumbnail carousel instead, at any length -- see
+    :func:`sphinx_autocodelink._gallery_cards.render_gallery_carousel`.
     """
     categories = categories or {}
     usage_counts = usage_counts or {}
+    if getattr(app.config, 'autocodelink_gallery_cards', False):
+        gallery_refs = {ref for ref in refs if categories.get(ref) == DEFAULT_GALLERY_CATEGORY}
+        if gallery_refs:
+            carousel = render_gallery_carousel(sorted(gallery_refs), docname=docname, app=app)
+            other_refs = [ref for ref in refs if ref not in gallery_refs]
+            if not other_refs:
+                return carousel
+            return carousel + _render_ref_list(
+                other_refs,
+                docname=docname,
+                app=app,
+                show_titles=show_titles,
+                categories=categories,
+                usage_counts=usage_counts,
+            )
+
     pairs = [(_docname_title(app, ref) if show_titles else ref, ref) for ref in refs]
     if getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency':
         labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
@@ -1402,6 +1423,13 @@ def setup(app: Sphinx) -> dict[str, bool]:
     ties broken alphabetically -- so the "N more" collapse (see :func:`_render_ref_list`)
     tucks away the least-used pages rather than an alphabetical tail.
 
+    ``autocodelink_gallery_cards`` (default ``False``) renders
+    :data:`DEFAULT_GALLERY_CATEGORY` entries as a carousel of Sphinx-Gallery-style
+    thumbnail cards -- the same thumbnail, title, and hover-tooltip intro
+    Sphinx-Gallery's own gallery pages use -- instead of a plain link list, at any
+    length. Requires Sphinx-Gallery and sphinx-design; see
+    :mod:`sphinx_autocodelink._gallery_cards`.
+
     ``autocodelink_category_labels`` (default ``{}``) renames a recorded
     category's own display label in grouped ``.. autocodelink-index::``
     output, e.g. ``{'Sphinx Gallery': 'Gallery Examples'}`` -- without
@@ -1448,6 +1476,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
     app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
     app.add_config_value('autocodelink_sort', 'alphabetical', rebuild='html')
+    app.add_config_value('autocodelink_gallery_cards', False, rebuild='html')
     app.add_directive('autocodelink', AutoCodeLink)
     app.add_directive('autocodelink-index', AutoCodeLinkIndex)
     return {'parallel_read_safe': True, 'parallel_write_safe': True}
