@@ -983,8 +983,8 @@ def test_setup():
             connected.setdefault(event, []).append(handler)
             priorities[(event, handler)] = priority
 
-        def add_config_value(self, name, default, rebuild):
-            config_values[name] = (default, rebuild)
+        def add_config_value(self, name, default, rebuild, types=()):
+            config_values[name] = (default, rebuild, types)
 
         def add_directive(self, name, directive):
             directives[name] = directive
@@ -1003,14 +1003,14 @@ def test_setup():
     # setup()'s docstring for why (Sphinx-Gallery's reference_url embedding, notably).
     assert priorities[('build-finished', autolink._embed_links)] == 900
     assert config_values == {
-        'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html'),
-        'autocodelink_autodoc_backrefs': (False, 'html'),
-        'autocodelink_category_labels': ({}, 'html'),
-        'autocodelink_category_order': ((), 'html'),
-        'autocodelink_doctest_blocks': (False, 'html'),
-        'autocodelink_sort': ('alphabetical', 'html'),
-        'autocodelink_show_usage_count': (False, 'html'),
-        'autocodelink_gallery_cards': (False, 'html'),
+        'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html', ()),
+        'autocodelink_autodoc_backrefs': (False, 'html', ()),
+        'autocodelink_category_labels': ({}, 'html', ()),
+        'autocodelink_category_order': ((), 'html', (list, tuple)),
+        'autocodelink_doctest_blocks': (False, 'html', ()),
+        'autocodelink_sort': ('alphabetical', 'html', ()),
+        'autocodelink_show_usage_count': (False, 'html', ()),
+        'autocodelink_gallery_cards': (False, 'html', ()),
     }
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}

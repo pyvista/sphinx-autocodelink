@@ -1153,7 +1153,7 @@ def _render_ref_list(
 def _sorted_categories(
     groups: dict[str, list[str]],
     category_labels: dict[str, str],
-    category_order: tuple[str, ...],
+    category_order: Sequence[str],
     docname: str,
 ) -> list[str]:
     """Return ``groups``' own categories in render order (see ``autocodelink_category_order``)."""
@@ -1497,7 +1497,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
-    app.add_config_value('autocodelink_category_order', (), rebuild='html')
+    app.add_config_value('autocodelink_category_order', (), rebuild='html', types=(list, tuple))
     app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
     app.add_config_value('autocodelink_sort', 'alphabetical', rebuild='html')
     app.add_config_value('autocodelink_show_usage_count', False, rebuild='html')
