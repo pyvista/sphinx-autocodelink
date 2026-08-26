@@ -29,6 +29,7 @@ def _fake_app(
     doctrees=None,
     target_uris=None,
     relative_uris=None,
+    sort='alphabetical',
 ):
     """Build a minimal Sphinx-app-shaped fake for the functions under test.
 
@@ -55,6 +56,7 @@ def _fake_app(
             get_target_uri=lambda docname: target_uris.get(docname, f'{docname}.html'),
             get_relative_uri=lambda from_, to: relative_uris.get(to, f'{to}.html'),
         ),
+        config=SimpleNamespace(autocodelink_sort=sort),
     )
 
 
@@ -194,7 +196,7 @@ def test_thumbnail_html_includes_image_when_resolvable(tmp_path):
         doctrees={'ex': _doctree('Ex', 'An intro.')},
     )
     _write_thumbnail(tmp_path, 'ex', 'sphx_glr_ex_thumb.png')
-    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex')
+    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex', usage_count=None)
     assert '<img src="_images/sphx_glr_ex_thumb.png" alt="">' in html
     assert 'tooltip="An intro."' in html
     assert 'sphx-glr-thumbcontainer' in html
@@ -202,7 +204,7 @@ def test_thumbnail_html_includes_image_when_resolvable(tmp_path):
 
 def test_thumbnail_html_omits_image_when_unresolvable(tmp_path):
     app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
-    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex')
+    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex', usage_count=None)
     assert '<img' not in html
     assert 'sphx-glr-thumbcontainer' in html
 
@@ -211,16 +213,64 @@ def test_thumbnail_html_link_text_is_wrapped_in_a_span(tmp_path):
     # Sphinx-Gallery's own CSS only hides this link's text if it's wrapped in a <span> --
     # see the comment in _thumbnail_html.
     app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
-    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex')
+    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex', usage_count=None)
     assert '<a class="reference internal" href="ex.html"><span>Ex</span></a>' in html
 
 
 def test_thumbnail_html_escapes_title_and_tooltip(tmp_path):
     app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'A <script> intro & more.')})
-    html = cards._thumbnail_html(app, docname='index', ref='ex', title='A & <Title>')
+    html = cards._thumbnail_html(
+        app, docname='index', ref='ex', title='A & <Title>', usage_count=None
+    )
     assert '<script>' not in html
     assert 'A &amp; &lt;Title&gt;' in html
     assert 'A &lt;script&gt; intro &amp; more.' in html
+
+
+def test_thumbnail_html_shows_usage_count_singular(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
+    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex', usage_count=1)
+    assert '<div class="sphinx-autocodelink-usage-count">1 use</div>' in html
+
+
+def test_thumbnail_html_shows_usage_count_plural(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
+    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex', usage_count=3)
+    assert '<div class="sphinx-autocodelink-usage-count">3 uses</div>' in html
+
+
+def test_thumbnail_html_omits_usage_count_when_none(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
+    html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex', usage_count=None)
+    assert 'sphinx-autocodelink-usage-count' not in html
+
+
+def test_render_gallery_carousel_sorts_by_frequency_and_shows_counts(tmp_path):
+    app = _fake_app(
+        srcdir=tmp_path,
+        sort='frequency',
+        titles={'a': nodes.title('Alpha', 'Alpha'), 'b': nodes.title('Bravo', 'Bravo')},
+        doctrees={'a': _doctree('Alpha', 'Intro.'), 'b': _doctree('Bravo', 'Intro.')},
+    )
+    html = cards.render_gallery_carousel(
+        ['a', 'b'], docname='index', app=app, usage_counts={'a': 1, 'b': 5}
+    )
+    # Bravo (5 uses) ranks before Alpha (1 use), reversing alphabetical order.
+    assert html.index('Bravo') < html.index('Alpha')
+    assert '<div class="sphinx-autocodelink-usage-count">5 uses</div>' in html
+    assert '<div class="sphinx-autocodelink-usage-count">1 use</div>' in html
+
+
+def test_render_gallery_carousel_alphabetical_mode_shows_no_counts(tmp_path):
+    app = _fake_app(
+        srcdir=tmp_path,
+        titles={'a': nodes.title('Alpha', 'Alpha')},
+        doctrees={'a': _doctree('Alpha', 'Intro.')},
+    )
+    html = cards.render_gallery_carousel(['a'], docname='index', app=app, usage_counts={'a': 5})
+    # The style block's own CSS selector mentions the class name regardless -- what
+    # matters is that no *element* using it was actually rendered.
+    assert '<div class="sphinx-autocodelink-usage-count">' not in html
 
 
 def test_card_html_wraps_each_thumbnail_in_a_grid_item():

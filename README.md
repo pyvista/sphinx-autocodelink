@@ -187,7 +187,8 @@ a heavily-used name's index entry doesn't turn into a wall of links.
   the target, most-used first, ties broken alphabetically. A page referencing the target more
   than once (through more than one code block, or more than one spelling of the same object)
   counts every one of them, not just whether it referenced it at all -- so the "N more" collapse
-  above tucks away the least-used pages, not an alphabetical tail.
+  above tucks away the least-used pages, not an alphabetical tail. Each entry also shows its own
+  count in plain text after the link, e.g. `pkg.thing (3 uses)`.
 
 ```python
 autocodelink_sort = 'frequency'
