@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+from collections import namedtuple
 from enum import Enum
+import functools
 import inspect
 import re
 import sys
@@ -725,6 +727,60 @@ def test_records_for_bare_class_reference_does_not_count_as_use():
 def test_records_for_uncalled_method_reference_does_not_count_as_use():
     records = autolink._records_for('callback = w.draw\n', {'w': _Widget()})
     (record,) = [r for r in records if r.accessed == 'w.draw']
+    assert record.counts_as_use is False
+
+
+def test_records_for_uncalled_staticmethod_reference_does_not_count_as_use():
+    records = autolink._records_for('callback = Widget.draw\n', {'Widget': _Widget})
+    (record,) = [r for r in records if r.accessed == 'Widget.draw']
+    assert record.counts_as_use is False
+
+
+class _Sized:
+    """A minimal stand-in with a ``cached_property`` and a plain instance attribute."""
+
+    def __init__(self) -> None:
+        self.label = 'sized'
+
+    @functools.cached_property
+    def area(self) -> int:
+        """Return a constant area."""
+        return 42
+
+
+def test_records_for_cached_property_read_counts_as_use():
+    # functools.cached_property doesn't subclass property -- a different code path.
+    records = autolink._records_for('s.area\n', {'s': _Sized()})
+    (record,) = [r for r in records if r.accessed == 's.area']
+    assert record.counts_as_use is True
+
+
+def test_records_for_plain_instance_attribute_counts_as_use():
+    records = autolink._records_for('s.label\n', {'s': _Sized()})
+    (record,) = [r for r in records if r.accessed == 's.label']
+    assert record.counts_as_use is True
+
+
+def test_records_for_namedtuple_field_counts_as_use():
+    point = namedtuple('Point', ['x', 'y'])(1, 2)
+    records = autolink._records_for('p.x\n', {'p': point})
+    (record,) = [r for r in records if r.accessed == 'p.x']
+    assert record.counts_as_use is True
+
+
+def test_records_for_module_constant_counts_as_use():
+    mod = types.ModuleType('fake_mod')
+    mod.CONST = 3.14
+    records = autolink._records_for('mod.CONST\n', {'mod': mod})
+    (record,) = [r for r in records if r.accessed == 'mod.CONST']
+    assert record.counts_as_use is True
+
+
+def test_records_for_bare_submodule_reference_does_not_count_as_use():
+    parent = types.ModuleType('fake_parent')
+    parent.sub = types.ModuleType('fake_parent.sub')
+    records = autolink._records_for('print(parent.sub)\n', {'parent': parent})
+    (record,) = [r for r in records if r.accessed == 'parent.sub']
     assert record.counts_as_use is False
 
 
