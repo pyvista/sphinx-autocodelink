@@ -52,6 +52,16 @@ source = ['sphinx_autocodelink']
 
 [tool.pytest.ini_options]
 addopts = '--cov=sphinx_autocodelink --cov-fail-under=95'
+filterwarnings = [
+  # Any warning the suite raises is a failure, so a new one can't go unnoticed.
+  'error',
+  # Except CPython's own fork-with-threads warning, raised by Sphinx's own parallel
+  # reader (sphinx.util.parallel) forking workers in the `parallel=2` build tests, with
+  # Sphinx-Gallery's parallel executor holding threads open. Not ours to act on. It
+  # wouldn't fail the suite either way -- os.fork() swallows the exception 'error' turns
+  # it into, rather than propagating it -- but that's incidental, not something to rely on.
+  'ignore:This process .* is multi-threaded, use of fork.*:DeprecationWarning',
+]
 testpaths = 'tests'
 
 [tool.ruff]
