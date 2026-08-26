@@ -30,6 +30,7 @@ def _fake_app(
     target_uris=None,
     relative_uris=None,
     sort='alphabetical',
+    show_usage_count=False,
 ):
     """Build a minimal Sphinx-app-shaped fake for the functions under test.
 
@@ -56,7 +57,9 @@ def _fake_app(
             get_target_uri=lambda docname: target_uris.get(docname, f'{docname}.html'),
             get_relative_uri=lambda from_, to: relative_uris.get(to, f'{to}.html'),
         ),
-        config=SimpleNamespace(autocodelink_sort=sort),
+        config=SimpleNamespace(
+            autocodelink_sort=sort, autocodelink_show_usage_count=show_usage_count
+        ),
     )
 
 
@@ -249,6 +252,7 @@ def test_render_gallery_carousel_sorts_by_frequency_and_shows_counts(tmp_path):
     app = _fake_app(
         srcdir=tmp_path,
         sort='frequency',
+        show_usage_count=True,
         titles={'a': nodes.title('Alpha', 'Alpha'), 'b': nodes.title('Bravo', 'Bravo')},
         doctrees={'a': _doctree('Alpha', 'Intro.'), 'b': _doctree('Bravo', 'Intro.')},
     )
@@ -270,6 +274,38 @@ def test_render_gallery_carousel_alphabetical_mode_shows_no_counts(tmp_path):
     html = cards.render_gallery_carousel(['a'], docname='index', app=app, usage_counts={'a': 5})
     # The style block's own CSS selector mentions the class name regardless -- what
     # matters is that no *element* using it was actually rendered.
+    assert '<div class="sphinx-autocodelink-usage-count">' not in html
+
+
+def test_render_gallery_carousel_shows_counts_in_alphabetical_mode(tmp_path):
+    app = _fake_app(
+        srcdir=tmp_path,
+        sort='alphabetical',
+        show_usage_count=True,
+        titles={'a': nodes.title('Alpha', 'Alpha'), 'b': nodes.title('Bravo', 'Bravo')},
+        doctrees={'a': _doctree('Alpha', 'Intro.'), 'b': _doctree('Bravo', 'Intro.')},
+    )
+    html = cards.render_gallery_carousel(
+        ['a', 'b'], docname='index', app=app, usage_counts={'a': 1, 'b': 5}
+    )
+    # Sort stays alphabetical -- Alpha still before Bravo -- but counts still show.
+    assert html.index('Alpha') < html.index('Bravo')
+    assert '<div class="sphinx-autocodelink-usage-count">1 use</div>' in html
+    assert '<div class="sphinx-autocodelink-usage-count">5 uses</div>' in html
+
+
+def test_render_gallery_carousel_frequency_mode_hides_counts_when_disabled(tmp_path):
+    app = _fake_app(
+        srcdir=tmp_path,
+        sort='frequency',
+        titles={'a': nodes.title('Alpha', 'Alpha'), 'b': nodes.title('Bravo', 'Bravo')},
+        doctrees={'a': _doctree('Alpha', 'Intro.'), 'b': _doctree('Bravo', 'Intro.')},
+    )
+    html = cards.render_gallery_carousel(
+        ['a', 'b'], docname='index', app=app, usage_counts={'a': 1, 'b': 5}
+    )
+    # Ranking still applies -- Bravo (5 uses) before Alpha (1 use) -- counts just aren't shown.
+    assert html.index('Bravo') < html.index('Alpha')
     assert '<div class="sphinx-autocodelink-usage-count">' not in html
 
 

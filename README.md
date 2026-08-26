@@ -189,11 +189,18 @@ a heavily-used name's index entry doesn't turn into a wall of links.
   or an `isinstance` check, doesn't count. A page referencing the target more than once (through
   more than one code block, or more than one spelling of the same object) counts every one of
   them, not just whether it referenced it at all -- so the "N more" collapse above tucks away the
-  least-used pages, not an alphabetical tail. Each entry also shows its own count in plain text
-  after the link, e.g. `pkg.thing (3 uses)`.
+  least-used pages, not an alphabetical tail.
 
 ```python
 autocodelink_sort = 'frequency'
+```
+
+`autocodelink_show_usage_count` shows each entry's own count as plain text after the link, e.g.
+`pkg.thing (3 uses)` -- independent of `autocodelink_sort`, so alphabetical order with counts
+shown is as valid a combination as frequency order with them hidden.
+
+```python
+autocodelink_show_usage_count = True
 ```
 
 **Styling.** Three categories, three link styles, matching how specific a real target each one
