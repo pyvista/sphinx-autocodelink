@@ -277,6 +277,7 @@ def test_card_html_wraps_each_thumbnail_in_a_grid_item():
     html = cards._card_html(['<div>one</div>', '<div>two</div>'])
     assert html.count('sd-col sd-d-flex-column') == 2
     assert 'sd-card sd-sphinx-override' in html
+    assert 'sd-row-cols-md-4' in html
     assert 'sd-row-cols-lg-4' in html
 
 

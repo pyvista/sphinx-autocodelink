@@ -29,8 +29,9 @@ from sphinx.util.osutil import relative_uri
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
-#: Thumbnails bundled into each carousel card -- large screens show all four in one
-#: row, smaller screens wrap them 2x2 (see the row-cols classes in ``_card_html``).
+#: Thumbnails bundled into each carousel card -- medium screens and up show all four
+#: in one row, only truly narrow (mobile-width) screens wrap them 2x2 (see the
+#: row-cols classes in ``_card_html``).
 _THUMBNAILS_PER_CARD = 4
 
 #: Sphinx-Gallery's own intro truncation length (sphinx_gallery.gen_rst docstring).
@@ -217,7 +218,7 @@ def _card_html(thumbnails: list[str]) -> str:
         '<div class="sd-card-body">'
         '<div class="sd-container-fluid sd-sphinx-override">'
         '<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 '
-        f'sd-row-cols-md-2 sd-row-cols-lg-4">{items}</div>'
+        f'sd-row-cols-md-4 sd-row-cols-lg-4">{items}</div>'
         '</div></div></div>'
     )
 
