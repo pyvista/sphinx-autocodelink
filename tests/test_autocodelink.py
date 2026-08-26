@@ -1261,6 +1261,46 @@ def test_render_ref_list_sort_frequency_ranks_by_usage_count():
     assert order == ['b', 'c', 'a']
 
 
+def test_render_ref_list_sort_frequency_shows_usage_count():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    html = autolink._render_ref_list(
+        ['a', 'b'],
+        docname='index',
+        app=app,
+        show_titles=False,
+        usage_counts={'a': 1, 'b': 5},
+    )
+    # Outside the <a> -- not part of the link itself.
+    assert '<a href="a.html">a</a> <span class="sphinx-autocodelink-usage-count">(1 use)</span>' in html
+    assert '<a href="b.html">b</a> <span class="sphinx-autocodelink-usage-count">(5 uses)</span>' in html
+
+
+def test_render_ref_list_sort_frequency_shows_zero_for_an_uncounted_ref():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, usage_counts={}
+    )
+    assert '(0 uses)' in html
+
+
+def test_render_ref_list_sort_alphabetical_shows_no_usage_count():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='alphabetical'),
+    )
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, usage_counts={'a': 5}
+    )
+    assert 'sphinx-autocodelink-usage-count' not in html
+    assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
+
+
 def test_render_ref_list_sort_frequency_ties_broken_alphabetically():
     app = SimpleNamespace(
         builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),

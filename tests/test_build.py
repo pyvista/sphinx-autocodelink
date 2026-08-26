@@ -178,6 +178,27 @@ def test_sort_frequency_ranks_by_usage_and_accumulates_across_spellings(tmp_path
     ]
 
 
+def test_sort_frequency_shows_usage_count_beside_each_entry(tmp_path):
+    outdir, _ = _build(tmp_path, confoverrides={'autocodelink_sort': 'frequency'})
+    refs = (outdir / 'refs.html').read_text()
+    forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
+    assert (
+        '<a href="index.html">Index</a> '
+        '<span class="sphinx-autocodelink-usage-count">(2 uses)</span>' in forced_flat
+    )
+    assert (
+        f'<a href="auto_examples/plot_thing.html">{STD_REF}Plotting a thing</span></a> '
+        '<span class="sphinx-autocodelink-usage-count">(1 use)</span>' in forced_flat
+    )
+
+
+def test_sort_alphabetical_shows_no_usage_count(tmp_path):
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
+    assert 'sphinx-autocodelink-usage-count' not in forced_flat
+
+
 def test_gallery_cards_disabled_by_default(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()

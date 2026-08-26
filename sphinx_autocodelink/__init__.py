@@ -1055,7 +1055,9 @@ def _render_ref_list(
     source actually used this target -- when it's ``'frequency'`` instead, ties broken
     alphabetically. ``usage_counts`` missing a ref (or not supplied at all) counts as 0,
     same as an unresolvable entry sinking to the bottom of its tied group rather than
-    erroring.
+    erroring. In ``'frequency'`` mode, each entry also shows its own count in plain text
+    after the link (e.g. "(3 uses)") -- outside the ``<a>``, since it explains the
+    ranking rather than being part of the destination itself.
 
     Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
     with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
@@ -1084,8 +1086,9 @@ def _render_ref_list(
                 usage_counts=usage_counts,
             )
 
+    sort_mode = getattr(app.config, 'autocodelink_sort', 'alphabetical')
     pairs = [(_docname_title(app, ref) if show_titles else ref, ref) for ref in refs]
-    if getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency':
+    if sort_mode == 'frequency':
         labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
     else:
         labeled = sorted(pairs)
@@ -1101,7 +1104,14 @@ def _render_ref_list(
                 text = f'{_XREF_OPEN}{text}{_XREF_CLOSE}'
             elif category == DEFAULT_GALLERY_CATEGORY:
                 text = f'{_STD_REF_OPEN}{text}{_STD_REF_CLOSE}'
-            items.append(f'<li><a href="{href}">{text}</a></li>')
+            count_suffix = ''
+            if sort_mode == 'frequency':
+                # Outside the <a> -- this is what explains the ranking, not part of
+                # the destination itself, so it shouldn't read (or click) like one.
+                count = usage_counts.get(ref, 0)
+                uses = 'use' if count == 1 else 'uses'
+                count_suffix = f' <span class="sphinx-autocodelink-usage-count">({count} {uses})</span>'
+            items.append(f'<li><a href="{href}">{text}</a>{count_suffix}</li>')
         return ''.join(items)
 
     if len(labeled) <= _COLLAPSE_THRESHOLD:
