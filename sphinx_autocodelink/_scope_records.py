@@ -115,7 +115,7 @@ def _scope_source(node: ast.AST) -> str | None:
         return None
 
 
-def scope_records(code: CodeType, frame: FrameType) -> list[_Record]:
+def records_for_scope(code: CodeType, frame: FrameType) -> list[_Record]:
     """Return records for one returning frame, resolved against that frame's own scope.
 
     The module scope is skipped; per-block recording already covers it.
@@ -173,7 +173,7 @@ def _call_chain(node: ast.expr) -> tuple[str, tuple[str, ...], ast.Call] | None:
     return None if target is None else (target, tuple(reversed(parts)), cursor)
 
 
-def call_records(
+def records_for_call(
     code: CodeType, instruction_offset: int, func: Any, frame: FrameType
 ) -> list[_Record]:
     """Return records for one observed call site, from the callable actually invoked.
@@ -212,11 +212,11 @@ class ExampleRecorder:
 
     def on_scope(self, code: CodeType, frame: FrameType) -> None:
         """Record everything the returning frame's own scope resolves."""
-        self._add(scope_records(code, frame))
+        self._add(records_for_scope(code, frame))
 
     def on_call(self, code: CodeType, instruction_offset: int, func: Any, frame: FrameType) -> None:
         """Record what the call site resolves that no name in scope could."""
-        self._add(call_records(code, instruction_offset, func, frame))
+        self._add(records_for_call(code, instruction_offset, func, frame))
 
     def _add(self, records: list[_Record]) -> None:
         """Append ``records``, up to :data:`MAX_RECORDS`."""

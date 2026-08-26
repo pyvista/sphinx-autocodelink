@@ -193,7 +193,7 @@ def test_start_is_refused_when_every_tool_id_is_taken(monkeypatch):
 def test_scope_records_skips_an_unreadable_file(tmp_path):
     scope_records.clear_caches()
     code = compile('def f():\n    pass\n', str(tmp_path / 'missing.py'), 'exec')
-    assert scope_records.scope_records(code, sys._getframe()) == []
+    assert scope_records.records_for_scope(code, sys._getframe()) == []
     assert scope_records._index_for(str(tmp_path / 'missing.py')) is None
 
 
@@ -202,7 +202,7 @@ def test_scope_records_skips_a_code_object_the_source_does_not_describe(tmp_path
     path.write_text('x = 1\n')
     scope_records.clear_caches()
     code = compile('def f():\n    pass\n', str(path), 'exec').co_consts[0]
-    assert scope_records.scope_records(code, sys._getframe()) == []
+    assert scope_records.records_for_scope(code, sys._getframe()) == []
 
 
 def test_scope_source_of_a_lambda():
@@ -290,7 +290,7 @@ def test_call_records_ignores_an_offset_with_no_call(tmp_path):
     path.write_text('x = 1\n')
     scope_records.clear_caches()
     code = compile(path.read_text(), str(path), 'exec')
-    assert scope_records.call_records(code, 0, Widget().render, sys._getframe()) == []
+    assert scope_records.records_for_call(code, 0, Widget().render, sys._getframe()) == []
 
 
 def test_recorder_stops_at_the_record_cap():
@@ -310,7 +310,7 @@ def test_clear_caches_empties_both_caches(tmp_path):
     assert not scope_records._POSITIONS
 
 
-# scope_records()/call_records() reached through a real frame rather than through
+# records_for_scope()/records_for_call() reached through a real frame rather than through
 # monitoring, for the same reason the callback tests above are: coverage can't see
 # inside a sys.monitoring callback.
 
@@ -335,14 +335,14 @@ def test_scope_records_resolves_against_the_frames_own_locals(tmp_path):
     frame = _frame_from(
         tmp_path, 'direct.py', "    widget = reg['a']\n    widget.render()\n", Registry()
     )
-    records = scope_records.scope_records(frame.f_code, frame)
+    records = scope_records.records_for_scope(frame.f_code, frame)
     assert 'widget.render' in _accessed(records)
 
 
 def test_scope_records_skips_the_module_scope(tmp_path):
     frame = _frame_from(tmp_path, 'modscope.py', '    pass\n', Registry())
     module_code = compile('x = 1', frame.f_code.co_filename, 'exec')
-    assert scope_records.scope_records(module_code, frame) == []
+    assert scope_records.records_for_scope(module_code, frame) == []
 
 
 @needs_monitoring
@@ -350,7 +350,7 @@ def test_call_records_of_a_receiver_no_dotted_name_addresses(tmp_path):
     frame = _frame_from(tmp_path, 'exprcall.py', "    reg['a'].render()\n", Registry())
     index = scope_records._index_for(frame.f_code.co_filename)
     [node] = index.calls_by_line[5]
-    records = scope_records.call_records(
+    records = scope_records.records_for_call(
         frame.f_code, _call_offset(frame.f_code, node), Widget().render, frame
     )
     assert _exprs(records) == {"reg['a'].render": records[0].candidates}
@@ -363,7 +363,7 @@ def test_call_records_skips_what_the_frames_own_names_already_resolve(tmp_path):
     )
     index = scope_records._index_for(frame.f_code.co_filename)
     [node] = index.calls_by_line[6]
-    records = scope_records.call_records(
+    records = scope_records.records_for_call(
         frame.f_code, _call_offset(frame.f_code, node), Widget().render, frame
     )
     assert records == []
@@ -379,7 +379,7 @@ def test_call_records_of_a_dotted_name_the_frame_no_longer_holds(tmp_path):
     )
     index = scope_records._index_for(frame.f_code.co_filename)
     [node] = index.calls_by_line[6]
-    [record] = scope_records.call_records(
+    [record] = scope_records.records_for_call(
         frame.f_code, _call_offset(frame.f_code, node), Widget().render, frame
     )
     assert record.accessed == 'widget.render'
@@ -392,7 +392,7 @@ def test_call_records_ignores_a_callable_with_no_documented_name(tmp_path):
     index = scope_records._index_for(frame.f_code.co_filename)
     [node] = index.calls_by_line[5]
     offset = _call_offset(frame.f_code, node)
-    assert scope_records.call_records(frame.f_code, offset, functools.partial(len), frame) == []
+    assert scope_records.records_for_call(frame.f_code, offset, functools.partial(len), frame) == []
 
 
 @needs_monitoring
@@ -401,7 +401,7 @@ def test_call_records_ignores_a_call_that_is_not_on_an_attribute(tmp_path):
     index = scope_records._index_for(frame.f_code.co_filename)
     [node] = index.calls_by_line[5]
     offset = _call_offset(frame.f_code, node)
-    assert scope_records.call_records(frame.f_code, offset, Widget, frame) == []
+    assert scope_records.records_for_call(frame.f_code, offset, Widget, frame) == []
 
 
 # The callbacks below are invoked directly rather than through a real traced run:
@@ -505,7 +505,7 @@ def test_call_records_skips_a_chain_off_a_call_the_return_type_resolves(tmp_path
     frame = _frame_from(tmp_path, 'chain.py', '    make_widget().render()\n', Registry())
     index = scope_records._index_for(frame.f_code.co_filename)
     [outer] = [c for c in index.calls_by_line[5] if isinstance(c.func, ast.Attribute)]
-    records = scope_records.call_records(
+    records = scope_records.records_for_call(
         frame.f_code, _call_offset(frame.f_code, outer), Widget().render, frame
     )
     assert records == []

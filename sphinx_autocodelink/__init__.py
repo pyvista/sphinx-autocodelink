@@ -32,8 +32,6 @@ from docutils import nodes
 from sphinx import addnodes
 from sphinx.util import logging as sphinx_logging
 
-from sphinx_autocodelink._gallery_cards import render_gallery_carousel
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from collections.abc import Sequence
@@ -1042,6 +1040,20 @@ def _docname_title(app: Sphinx, docname: str) -> str:
     return title_node.astext() if title_node is not None else docname
 
 
+def _sorted_refs(
+    refs: list[str],
+    *,
+    app: Sphinx,
+    usage_counts: dict[str, int],
+    show_titles: bool = True,
+) -> list[tuple[str, str]]:
+    """Return ``(display label, ref)`` pairs in ``autocodelink_sort`` order."""
+    pairs = [(_docname_title(app, ref) if show_titles else ref, ref) for ref in refs]
+    if getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency':
+        return sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
+    return sorted(pairs)
+
+
 _COLLAPSE_THRESHOLD = 8
 _COLLAPSE_VISIBLE = 5
 
@@ -1067,6 +1079,8 @@ def _render_ref_list(
     categories = categories or {}
     usage_counts = usage_counts or {}
     if getattr(app.config, 'autocodelink_gallery_cards', False):
+        from sphinx_autocodelink._gallery_cards import render_gallery_carousel
+
         gallery_refs = {ref for ref in refs if categories.get(ref) == DEFAULT_GALLERY_CATEGORY}
         if gallery_refs:
             carousel = render_gallery_carousel(
@@ -1084,13 +1098,8 @@ def _render_ref_list(
                 usage_counts=usage_counts,
             )
 
-    sort_mode = getattr(app.config, 'autocodelink_sort', 'alphabetical')
     show_counts = getattr(app.config, 'autocodelink_show_usage_count', False)
-    pairs = [(_docname_title(app, ref) if show_titles else ref, ref) for ref in refs]
-    if sort_mode == 'frequency':
-        labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
-    else:
-        labeled = sorted(pairs)
+    labeled = _sorted_refs(refs, app=app, usage_counts=usage_counts, show_titles=show_titles)
 
     def render(entries: list[tuple[str, str]]) -> str:
         """Render a sequence of (label, ref) pairs as ``<li>`` entries."""
@@ -1430,10 +1439,10 @@ def _wire_gallery_tracing(app: Sphinx, config: Any) -> None:
     ``reset_modules`` into the conf that reaches parallel workers.
     """
     from sphinx_autocodelink.gallery import RESET_AUTOCODELINK
-    from sphinx_autocodelink.gallery import wants_tracing
+    from sphinx_autocodelink.gallery import _wants_tracing
 
     gallery_conf = getattr(config, 'sphinx_gallery_conf', None)
-    if not wants_tracing(gallery_conf):
+    if not _wants_tracing(gallery_conf):
         return
     resets = tuple(gallery_conf.get('reset_modules', ('matplotlib', 'seaborn')))
     if RESET_AUTOCODELINK in resets:

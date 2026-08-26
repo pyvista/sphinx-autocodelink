@@ -112,7 +112,7 @@ class AutoCodeLinkScraper:
         return ''
 
 
-def wants_tracing(gallery_conf: dict[str, Any] | None) -> bool:
+def _wants_tracing(gallery_conf: dict[str, Any] | None) -> bool:
     """Return whether ``gallery_conf`` has a scraper that asked for traced examples."""
     if not monitoring_available() or not gallery_conf:
         return False

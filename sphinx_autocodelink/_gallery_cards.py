@@ -17,6 +17,9 @@ from typing import TYPE_CHECKING
 from docutils import nodes
 from sphinx.util.osutil import relative_uri
 
+from sphinx_autocodelink import _docname_title
+from sphinx_autocodelink import _sorted_refs
+
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
@@ -58,12 +61,6 @@ _CAROUSEL_STYLE = (
     'background:rgba(128,128,128,.6)}'
     '</style>'
 )
-
-
-def _docname_title(app: Sphinx, docname: str) -> str:
-    """Return ``docname``'s page title, or the docname itself if it has none on record."""
-    title_node = app.env.titles.get(docname)
-    return title_node.astext() if title_node is not None else docname
 
 
 def _thumbnail_source_path(app: Sphinx, docname: str) -> str | None:
@@ -171,13 +168,8 @@ def render_gallery_carousel(
     horizontally-scrolling carousel instead of a collapsing list.
     """
     usage_counts = usage_counts or {}
-    sort_frequency = getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency'
     show_counts = getattr(app.config, 'autocodelink_show_usage_count', False)
-    pairs = [(_docname_title(app, ref), ref) for ref in refs]
-    if sort_frequency:
-        labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
-    else:
-        labeled = sorted(pairs)
+    labeled = _sorted_refs(refs, app=app, usage_counts=usage_counts)
     thumbnails = [
         _thumbnail_html(
             app,
