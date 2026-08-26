@@ -59,30 +59,59 @@ Sphinx-Gallery's own `parallel=True` mode runs each example in a separate worker
 Sphinx's usual mechanism for merging data back into the main build. `AutoCodeLinkScraper` writes its
 records to disk instead, so they survive regardless.
 
-**Limitation: only resolves identifiers in an example's own top-level (module) scope.** A root
-identifier that only ever exists inside one of the example's own helper functions -- a local
-variable, a parameter -- isn't resolvable:
+**Every scope an example actually runs, not just its top-level one.** An identifier that only
+exists inside one of the example's own helper functions -- a local variable, a parameter -- resolves
+too, and so does a receiver no dotted name addresses at all:
 
 ```python
 def plot_it(mesh):
-    smoothed = mesh.smooth_taubin()  # not linked: `smoothed` never leaves plot_it's own scope
+    smoothed = mesh.smooth_taubin()  # linked: resolved against plot_it's own real locals
     smoothed.plot()
+    dataset['label_map'].contour_labels()  # linked: from the method actually called here
 
 
 plot_it(pv.Sphere())
 ```
 
-There's no workaround for Sphinx-Gallery examples specifically -- this is different from the
-standalone `.. autocodelink::` directive and `record_namespace()`, which do resolve this case (see
-[Resolving identifiers local to a helper
-function](#resolving-identifiers-local-to-a-helper-function)); that mechanism traces the code's own
-execution, which isn't available to hook into Sphinx-Gallery's own execution of an example script.
+Two things make that work, both driven by tracing the example while Sphinx-Gallery runs it. Each of
+the example's own function scopes is resolved against that scope's own live namespace, at the moment
+the call returns -- so a helper defined in one cell and called five cells later resolves when it
+actually runs, not when its cell was scraped. And every call the example makes is resolved from the
+callable the interpreter really invoked, which is what covers a receiver that no name can be looked
+up for: a subscript, an index into a call's result, a comprehension variable. Only the trailing
+`.attribute` of such an expression gets the link; names inside the receiver keep their own.
 
-A local name that's *also* bound at module level, to a value of the same type, resolves anyway --
-resolution matches identifier text against the module namespace by name, not by real lexical scope,
-so a same-named module-level variable is indistinguishable from the local one shadowing it. Not a
-workaround to rely on deliberately: a same-named module-level variable of a *different* type
-resolves to the wrong link, not to no link at all.
+Nothing traced is retained: each observation is turned into candidate *names* -- strings -- inside
+the callback that reports it, and every reference to the traced object is dropped before it returns.
+Anything an example builds (a plotter, a mesh, whatever holds a native resource) is collected on the
+example's own schedule, exactly as it would be untraced.
+
+Requirements and limits:
+
+- **Python 3.12+**, for [`sys.monitoring`](https://docs.python.org/3/library/sys.monitoring.html).
+  Below that this is a no-op and examples resolve from their top-level namespace only, as before.
+- **`reset_modules_order` must include `'before'`** (`'before'`, the default, or `'both'`). Tracing
+  is set up through Sphinx-Gallery's `reset_modules` hook -- the only one that fires before an
+  example runs -- which this extension adds for you wherever `AutoCodeLinkScraper` is configured,
+  so there's nothing to add by hand. Set to `'after'` alone, nothing runs before an example at all,
+  and you get a build warning saying so.
+- **A helper the example never calls isn't resolvable**, and neither is a scope left by a raised
+  exception. There is nothing executed to observe in either case.
+- **The link on a complex receiver's trailing attribute needs the expression on one line.** The
+  "Used In" entry doesn't -- that's recorded either way.
+
+Cost is not a reason to avoid it. Every event registered is disabled at its own code location the
+first time it fires, so a whole gallery build pays one callback per distinct code location that ever
+runs, rather than one per call; a real PyVista example measures the same traced and untraced. Pass
+`AutoCodeLinkScraper(trace=False)` to turn it off regardless.
+
+A local name that's *also* bound at module level, to a value of the same type, resolves anyway in
+the flattened `exec_with_local_scopes()` path below -- resolution matches identifier text against
+one merged namespace by name, not by real lexical scope, so a same-named module-level variable is
+indistinguishable from the local one shadowing it. Not a workaround to rely on deliberately: a
+same-named module-level variable of a *different* type resolves to the wrong link, not to no link at
+all. Sphinx-Gallery examples aren't affected -- each scope there is resolved against its own real
+namespace.
 
 If `sphinx_gallery_conf['reference_url']` is also configured for a module `AutoCodeLinkScraper`
 covers too, both will try to link the same identifiers. This extension runs its own embedding after
@@ -249,10 +278,12 @@ plain link list beside the carousel.
 
 ### Resolving identifiers local to a helper function
 
-Only a script's top-level namespace is resolvable by default -- a root identifier that only ever
-exists inside one of the script's own helper functions (a local variable, a parameter) has nothing
-to look it up against, even though the code accessing it is right there. Use
-`exec_with_local_scopes()` in place of a plain `exec()` to also resolve those:
+For code *you* execute (the standalone directive, or `record_namespace()` below), only the script's
+top-level namespace is resolvable by default -- a root identifier that only ever exists inside one
+of the script's own helper functions (a local variable, a parameter) has nothing to look it up
+against, even though the code accessing it is right there. Use `exec_with_local_scopes()` in place
+of a plain `exec()` to also resolve those. (Sphinx-Gallery examples need none of this: this
+extension traces those itself, scope by scope -- see [Sphinx-Gallery](#sphinx-gallery).)
 
 ```python
 from sphinx_autocodelink import exec_with_local_scopes

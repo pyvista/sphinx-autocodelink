@@ -50,6 +50,7 @@ from sphinx_autocodelink._gallery_cards import render_gallery_carousel
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from collections.abc import Sequence
     from types import CodeType
 
     from docutils.parsers.rst.states import RSTState
@@ -106,6 +107,9 @@ _DOT_SPAN = '<span class="o">.</span>'
 #: A call's closing paren: ``)``, or merged ``()`` for a no-arg call.
 _CALL_END = r'<span class="p">\(?\)</span>'
 
+#: Replacement making a Pygments name-token class in an escaped fragment match any of them.
+_LOOSE_NAME_CLASS = 'class="n[a-zA-Z]{0,2}"'
+
 
 def _dotted_span_source(parts: tuple[str, ...]) -> str:
     """Build a regex source matching how Pygments is likely to render a dotted chain."""
@@ -115,6 +119,46 @@ def _dotted_span_source(parts: tuple[str, ...]) -> str:
 def _name_pattern_source(accessed: str) -> str:
     """Build a regex source matching how Pygments is likely to render ``accessed``."""
     return _dotted_span_source(tuple(accessed.split('.')))
+
+
+#: Matches one Pygments name-token class (``n``, ``nf``, ``nc``, ...), for loosening.
+_NAME_CLASS_RE = re.compile(r'class="n[a-zA-Z]{0,2}"')
+
+
+def _highlight_fragment(expr: str) -> str | None:
+    """Return Pygments' own HTML for ``expr``, or ``None`` if it isn't a single line.
+
+    Highlighting the fragment with the same lexer and formatter Sphinx uses is
+    what makes an arbitrary expression matchable in the built page at all:
+    guessing the markup token by token gets escaping and token merging (``()[``
+    lands in one span) wrong.
+    """
+    from pygments import highlight
+    from pygments.formatters import HtmlFormatter
+    from pygments.lexers import PythonLexer
+
+    try:
+        fragment = highlight(expr, PythonLexer(), HtmlFormatter(nowrap=True)).rstrip('\n')
+    except Exception:  # noqa: BLE001 -- a fragment that won't lex simply isn't linkable
+        return None
+    return None if '\n' in fragment else fragment
+
+
+def _expr_pattern_source(expr: str) -> str | None:
+    """Build a regex source matching just ``expr``'s trailing ``.attribute``, in context.
+
+    The receiver is matched as a fixed-width lookbehind rather than as part of
+    the match, so the receiver's own separately-resolved names (``dataset`` in
+    ``dataset['label_map'].contour_labels``) still get their own links.
+    """
+    fragment = _highlight_fragment(expr)
+    if fragment is None:
+        return None
+    index = fragment.rfind(_DOT_SPAN)
+    if index <= 0:
+        return None
+    prefix, trailing = fragment[:index], fragment[index:]
+    return f'(?<={re.escape(prefix)}){_NAME_CLASS_RE.sub(_LOOSE_NAME_CLASS, re.escape(trailing))}'
 
 
 @dataclass(frozen=True)
@@ -138,6 +182,26 @@ class _CallCandidate:
     call_target: str
     trailing: tuple[str, ...]
     candidates: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _ExprCandidate:
+    """A trailing attribute on an expression no dotted name can address, and its candidates.
+
+    Recorded from a real call site observed during execution (see
+    :mod:`sphinx_autocodelink._scope_records`), for receivers that name-based
+    resolution has nothing to look up -- a subscript (``dataset['label_map']
+    .contour_labels()``), an index into a call's result, a comprehension
+    variable. ``expr`` is the whole attribute expression's own source; only its
+    trailing attribute gets linked.
+    """
+
+    expr: str
+    candidates: tuple[str, ...]
+
+
+#: Any one recorded reference, whichever shape it takes.
+_Record = _Candidate | _CallCandidate | _ExprCandidate
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +369,37 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
 
         return list(_module_path_candidates(obj.__class__, []))
     return []
+
+
+def _candidates_for_callable(func: Any) -> list[str]:
+    """Return candidate documented names for a callable observed at a real call site.
+
+    Unlike :func:`_candidate_names`, nothing is inferred from the source text
+    here: ``func`` is the object the interpreter actually called, so a
+    ``functools.wraps``-style decorator resolves to the name it wraps, and a
+    receiver that no dotted name could address resolves like any other.
+
+    Builtins are excluded. Observing real calls sees every ``print``, ``len``
+    and ``str.join`` an example makes, none of which name-based resolution
+    would ever have found (they aren't in the namespace); linking all of them
+    to the Python docs is noise, not a gap being closed. So are qualified names
+    carrying a ``<locals>`` or ``<genexpr>`` part -- nothing nested or anonymous
+    is a documented object, and a call instruction can report one (the generator
+    ``any(x for x in y)`` builds) where the source says otherwise.
+    """
+    if inspect.isclass(func):
+        candidates = _class_candidates(func, [])
+    elif inspect.ismethod(func):
+        name = getattr(func, '__name__', None)
+        owner = func.__self__
+        if name is None:
+            return []
+        candidates = _class_candidates(owner if inspect.isclass(owner) else type(owner), [name])
+    elif inspect.isroutine(func):
+        candidates = list(_module_path_candidates(func, []))
+    else:
+        return []
+    return [name for name in candidates if not name.startswith('builtins.') and '<' not in name]
 
 
 def _is_attribute_read(accessed: str, namespace: dict[str, Any]) -> bool:
@@ -523,9 +618,9 @@ def _call_chain_candidates(
     return _class_candidates(return_type, list(trailing))
 
 
-def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _CallCandidate]:
+def _records_for(source: str, namespace: dict[str, Any]) -> list[_Record]:
     """Return every resolved candidate for the identifiers accessed in ``source``."""
-    records: list[_Candidate | _CallCandidate] = []
+    records: list[_Record] = []
     collected = _collect(source)
     for accessed in sorted(collected.accessed):
         candidates = _candidate_names(accessed, namespace)
@@ -684,7 +779,7 @@ def record_namespace(
     if not category and state is not None and is_inside_autodoc_desc(state):
         category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
 
-    all_records: dict[str, list[_Candidate | _CallCandidate]] | None = getattr(env, _ENV_ATTR, None)
+    all_records: dict[str, list[_Record]] | None = getattr(env, _ENV_ATTR, None)
     if all_records is None:
         all_records = {}
         setattr(env, _ENV_ATTR, all_records)
@@ -703,13 +798,18 @@ def record_namespace_to_disk(
     source: str,
     namespace: dict[str, Any],
     category: str = '',
+    extra: Sequence[_Record] = (),
 ) -> None:
     """Like :func:`record_namespace`, but appended to a file under ``directory``.
+
+    ``extra`` is appended as-is, for records resolved somewhere other than
+    ``source`` against ``namespace`` -- e.g. by tracing the example's own
+    helper-function scopes (see :mod:`sphinx_autocodelink._scope_records`).
 
     For recording from a process Sphinx's own ``env-merge-info`` never sees
     -- e.g. Sphinx-Gallery's own parallel (joblib) example workers.
     """
-    records = _records_for(source, namespace)
+    records = [*_records_for(source, namespace), *(extra or ())]
     if not records:
         return
     target = Path(directory) / f'{docname}.json'
@@ -721,8 +821,10 @@ def record_namespace_to_disk(
     target.write_text(json.dumps(existing))
 
 
-def _to_jsonable(record: _Candidate | _CallCandidate) -> dict[str, Any]:
+def _to_jsonable(record: _Record) -> dict[str, Any]:
     """Convert one record to a JSON-serializable dict."""
+    if isinstance(record, _ExprCandidate):
+        return {'expr': record.expr, 'candidates': list(record.candidates)}
     if isinstance(record, _CallCandidate):
         return {
             'call_target': record.call_target,
@@ -736,8 +838,10 @@ def _to_jsonable(record: _Candidate | _CallCandidate) -> dict[str, Any]:
     }
 
 
-def _from_jsonable(entry: dict[str, Any]) -> _Candidate | _CallCandidate:
+def _from_jsonable(entry: dict[str, Any]) -> _Record:
     """Convert one JSON dict back to a record."""
+    if 'expr' in entry:
+        return _ExprCandidate(entry['expr'], tuple(entry['candidates']))
     if 'call_target' in entry:
         return _CallCandidate(
             entry['call_target'], tuple(entry['trailing']), tuple(entry['candidates'])
@@ -749,9 +853,9 @@ def _from_jsonable(entry: dict[str, Any]) -> _Candidate | _CallCandidate:
 
 def _load_disk_records(
     directory: Path,
-) -> tuple[dict[str, list[_Candidate | _CallCandidate]], dict[str, str]]:
+) -> tuple[dict[str, list[_Record]], dict[str, str]]:
     """Return every docname's records and category, written by :func:`record_namespace_to_disk`."""
-    records: dict[str, list[_Candidate | _CallCandidate]] = {}
+    records: dict[str, list[_Record]] = {}
     categories: dict[str, str] = {}
     if not directory.is_dir():
         return records, categories
@@ -884,7 +988,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
     if exception is not None or app.builder.format != 'html':
         return
 
-    records: dict[str, list[_Candidate | _CallCandidate]] = dict(getattr(app.env, _ENV_ATTR, {}))
+    records: dict[str, list[_Record]] = dict(getattr(app.env, _ENV_ATTR, {}))
     categories: dict[str, str] = dict(getattr(app.env, _CATEGORY_ATTR, {}))
     records_dir = getattr(app.config, 'autocodelink_records_dir', None)
     if records_dir:
@@ -918,17 +1022,39 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         # Raw occurrence counts, independent of the dedup below.
         name_occurrences: Counter[str] = Counter()
         call_occurrences: Counter[tuple[str, tuple[str, ...]]] = Counter()
+        expr_occurrences: Counter[str] = Counter()
         for candidate in candidates:
-            if isinstance(candidate, _CallCandidate):
+            if isinstance(candidate, _ExprCandidate):
+                expr_occurrences[candidate.expr] += 1
+            elif isinstance(candidate, _CallCandidate):
                 call_occurrences[(candidate.call_target, candidate.trailing)] += 1
             elif candidate.counts_as_use:
                 name_occurrences[candidate.accessed] += 1
 
-        # Dedup: the same accessed name or call chain can be recorded multiple times.
+        # Dedup: the same accessed name, call chain or expression can be recorded twice.
         resolved_names: dict[str, str] = {}
         resolved_calls: dict[tuple[str, tuple[str, ...]], str] = {}
+        resolved_exprs: dict[str, str] = {}
         for candidate in candidates:
-            if isinstance(candidate, _CallCandidate):
+            if isinstance(candidate, _ExprCandidate):
+                if candidate.expr in resolved_exprs:
+                    continue
+                resolved = _resolve_link(
+                    candidate.candidates,
+                    docname=docname,
+                    app=app,
+                    local=local,
+                    external=external,
+                    aliased=aliased,
+                )
+                if resolved is not None:
+                    name, link = resolved
+                    resolved_exprs[candidate.expr] = link
+                    backrefs.setdefault(name, set()).add(docname)
+                    usage_counts.setdefault(name, Counter())[docname] += expr_occurrences[
+                        candidate.expr
+                    ]
+            elif isinstance(candidate, _CallCandidate):
                 call_key = (candidate.call_target, candidate.trailing)
                 if call_key in resolved_calls:
                     continue
@@ -967,7 +1093,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     if count:
                         backrefs.setdefault(name, set()).add(docname)
                         usage_counts.setdefault(name, Counter())[docname] += count
-        if not resolved_names and not resolved_calls:
+        if not resolved_names and not resolved_calls and not resolved_exprs:
             continue
 
         # One pattern, longest name first (avoids re-wrapping `mesh` inside `mesh.plot`);
@@ -988,6 +1114,18 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
             sources.append(
                 f'(?P<n{i}>{_CALL_END}(?P<w{i}>{_DOT_SPAN}{_dotted_span_source(trailing)}))'
             )
+        # An expression's own pattern matches only its trailing attribute, its receiver
+        # held in a lookbehind -- so a name inside that receiver still gets its own link.
+        for expr in sorted(resolved_exprs, key=len, reverse=True):
+            pattern = _expr_pattern_source(expr)
+            if pattern is None:
+                continue
+            i = len(sources)
+            group_kind[i] = 'name'
+            group_link[i] = resolved_exprs[expr]
+            sources.append(f'(?P<n{i}>{pattern})')
+        if not sources:
+            continue
         combined = re.compile('|'.join(sources))
 
         html = out_file.read_text(encoding='utf-8')
@@ -1481,6 +1619,45 @@ def _register_autodoc_hook(app: Sphinx) -> None:
     app.connect('autodoc-process-docstring', _inject_backref_index)
 
 
+def _wire_gallery_tracing(app: Sphinx, config: Any) -> None:
+    """Add :func:`~sphinx_autocodelink.gallery.reset_autocodelink` to ``reset_modules``.
+
+    Tracing an example has to be set up *before* it runs, and Sphinx-Gallery's
+    ``reset_modules`` is its only hook that fires there -- but a scraper is the
+    only thing a user configures, so the two halves are joined here rather than
+    asked for twice. Runs at ``config-inited`` ahead of Sphinx-Gallery's own
+    priority-10 handler, which is what reads ``reset_modules`` into the
+    ``gallery_conf`` that reaches parallel workers.
+    """
+    from sphinx_autocodelink.gallery import RESET_AUTOCODELINK
+    from sphinx_autocodelink.gallery import wants_tracing
+
+    gallery_conf = getattr(config, 'sphinx_gallery_conf', None)
+    if not wants_tracing(gallery_conf):
+        return
+    resets = tuple(gallery_conf.get('reset_modules', ('matplotlib', 'seaborn')))
+    if RESET_AUTOCODELINK in resets:
+        return
+    # Added by dotted name, which Sphinx-Gallery imports for itself: a bare function
+    # here would make the whole `sphinx_gallery_conf` unpicklable for Sphinx's own
+    # config cache, for a hook the user never asked for by hand.
+    gallery_conf['reset_modules'] = (*resets, RESET_AUTOCODELINK)
+    app.connect('build-finished', _stop_gallery_tracing)
+    if gallery_conf.get('reset_modules_order', 'before') == 'after':
+        _logger.warning(
+            "autocodelink: sphinx_gallery_conf['reset_modules_order'] is 'after', so "
+            'nothing runs before an example -- gallery examples will resolve their own '
+            "top-level scope only. Use 'before' or 'both' to trace them."
+        )
+
+
+def _stop_gallery_tracing(app: Sphinx, exception: Exception | None) -> None:
+    """Leave no tracer running past the gallery: nothing calls ``reset_modules`` at the end."""
+    from sphinx_autocodelink.gallery import reset_autocodelink
+
+    reset_autocodelink({}, None, 'after')
+
+
 #: Default value of the ``autocodelink_records_dir`` config value, and of
 #: :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s ``records_dir`` -- matching
 #: defaults mean disk-based recording works without configuring either explicitly.
@@ -1552,6 +1729,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
 
     app.connect('builder-inited', _clear_disk_records)
+    app.connect('config-inited', _wire_gallery_tracing, priority=5)
     app.connect('env-merge-info', _merge_records)
     app.connect('env-purge-doc', _purge_doc)
     # Priority > 500 (Sphinx's default): run after other build-finished handlers, e.g.

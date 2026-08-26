@@ -20,6 +20,7 @@ import pytest
 from sphinx import addnodes
 
 import sphinx_autocodelink as autolink
+from sphinx_autocodelink._tracing import monitoring_available
 
 # typing.get_overloads was added in 3.11 -- see sphinx_autocodelink's own import guard.
 try:
@@ -29,6 +30,10 @@ except ImportError:  # Python 3.10
 
 needs_get_overloads = pytest.mark.skipif(
     get_overloads is None, reason='typing.get_overloads added in Python 3.11'
+)
+
+needs_monitoring = pytest.mark.skipif(
+    not monitoring_available(), reason='sys.monitoring added in Python 3.12'
 )
 
 
@@ -987,6 +992,7 @@ def test_setup():
 
     assert connected == {
         'builder-inited': [autolink._clear_disk_records, autolink._register_autodoc_hook],
+        'config-inited': [autolink._wire_gallery_tracing],
         'env-merge-info': [autolink._merge_records],
         'env-purge-doc': [autolink._purge_doc],
         'build-finished': [autolink._embed_links],
@@ -2093,3 +2099,121 @@ def test_register_autodoc_hook_connects_when_enabled_and_available():
 
     autolink._register_autodoc_hook(FakeApp())
     assert connected == {'autodoc-process-docstring': autolink._inject_backref_index}
+
+
+class _Owner:
+    """A class whose members exercise every shape of observed callable."""
+
+    def method(self):
+        """Return nothing."""
+
+    @classmethod
+    def class_method(cls):
+        """Return nothing."""
+
+
+def _plain_function():
+    """Return nothing."""
+
+
+def test_candidates_for_callable():
+    assert autolink._candidates_for_callable(_Owner)[0].endswith('_Owner')
+    assert autolink._candidates_for_callable(_Owner().method)[0].endswith('_Owner.method')
+    assert autolink._candidates_for_callable(_Owner.class_method)[0].endswith('_Owner.class_method')
+    assert autolink._candidates_for_callable(_plain_function)[0].endswith('_plain_function')
+
+
+def test_candidates_for_callable_skips_builtins_and_the_unnameable():
+    assert autolink._candidates_for_callable(len) == []
+    assert autolink._candidates_for_callable('not callable at all') == []
+    assert autolink._candidates_for_callable(functools.partial(_plain_function)) == []
+
+
+class _NamelessCallable:
+    """A callable with no ``__name__``, for the method that can't be named."""
+
+    def __call__(self):
+        """Return nothing."""
+
+
+def test_candidates_for_a_method_with_no_name():
+    assert autolink._candidates_for_callable(types.MethodType(_NamelessCallable(), _Owner())) == []
+
+
+def test_expr_pattern_source_matches_only_the_trailing_attribute():
+    pattern = autolink._expr_pattern_source("reg['a'].render")
+    html = (
+        '<span class="n">reg</span><span class="p">[</span><span class="s1">&#39;a&#39;</span>'
+        '<span class="p">]</span><span class="o">.</span><span class="n">render</span>'
+    )
+    match = re.search(pattern, html.replace('&#39;', "'"))
+    assert match.group() == '<span class="o">.</span><span class="n">render</span>'
+
+
+def test_expr_pattern_source_of_something_with_no_trailing_attribute():
+    assert autolink._expr_pattern_source('reg') is None
+    assert autolink._expr_pattern_source('.render') is None
+
+
+def test_expr_pattern_source_of_a_multi_line_expression():
+    assert autolink._expr_pattern_source('reg[\n    "a"\n].render') is None
+
+
+def test_highlight_fragment_that_will_not_lex(monkeypatch):
+    import pygments
+
+    def boom(*args, **kwargs):
+        raise ValueError
+
+    monkeypatch.setattr(pygments, 'highlight', boom)
+    assert autolink._highlight_fragment('anything') is None
+
+
+def test_expr_candidate_round_trips_through_json():
+    record = autolink._ExprCandidate("reg['a'].render", ('pkg.Widget.render',))
+    assert autolink._from_jsonable(autolink._to_jsonable(record)) == record
+
+
+@needs_monitoring
+def test_wire_gallery_tracing_adds_the_reset_hook():
+    from sphinx_autocodelink.gallery import RESET_AUTOCODELINK
+    from sphinx_autocodelink.gallery import AutoCodeLinkScraper
+
+    connected = []
+    app = SimpleNamespace(connect=lambda event, handler: connected.append(event))
+    conf = {'image_scrapers': (AutoCodeLinkScraper(),)}
+    config = SimpleNamespace(sphinx_gallery_conf=conf)
+    autolink._wire_gallery_tracing(app, config)
+    assert conf['reset_modules'] == ('matplotlib', 'seaborn', RESET_AUTOCODELINK)
+    assert connected == ['build-finished']
+
+    # already there: left exactly as it is, not appended twice
+    autolink._wire_gallery_tracing(app, config)
+    assert conf['reset_modules'].count(RESET_AUTOCODELINK) == 1
+
+
+def test_wire_gallery_tracing_without_a_gallery():
+    autolink._wire_gallery_tracing(None, SimpleNamespace())
+
+
+def test_stop_gallery_tracing_leaves_no_tracer_running():
+    autolink._stop_gallery_tracing(None, None)
+    from sphinx_autocodelink import gallery as sg_gallery
+
+    assert sg_gallery._TRACER is None or not sg_gallery._TRACER.active
+
+
+@needs_monitoring
+def test_wire_gallery_tracing_warns_when_nothing_runs_before_an_example(monkeypatch):
+    from sphinx_autocodelink.gallery import AutoCodeLinkScraper
+
+    warnings = []
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args: warnings.append(args))
+    conf = {
+        'image_scrapers': (AutoCodeLinkScraper(),),
+        'reset_modules': (),
+        'reset_modules_order': 'after',
+    }
+    app = SimpleNamespace(connect=lambda event, handler: None)
+    autolink._wire_gallery_tracing(app, SimpleNamespace(sphinx_gallery_conf=conf))
+    assert len(warnings) == 1
