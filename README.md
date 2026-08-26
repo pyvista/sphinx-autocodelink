@@ -181,6 +181,16 @@ autocodelink_category_labels = {
 }
 ```
 
+Groups render alphabetically by their displayed label by default. Set `autocodelink_category_order`
+to override that with an explicit order instead -- list every category string that appears (not the
+renamed label); a category present but left out still renders, sorted alphabetically after the listed
+ones, with a build warning naming it so a config that's gone stale gets caught rather than silently
+misordering things:
+
+```python
+autocodelink_category_order = ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
+```
+
 **Long lists.** Each rendered list (a whole flat list, or one category's group) shows at most 8
 entries; past that it shows the first 5 and tucks the rest behind a `<details>` "N more" toggle, so
 a heavily-used name's index entry doesn't turn into a wall of links.
