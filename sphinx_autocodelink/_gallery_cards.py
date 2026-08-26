@@ -1,19 +1,10 @@
 """Sphinx-Gallery-style thumbnail cards for the "Used In" list's gallery entries.
 
-Opt-in via ``autocodelink_gallery_cards`` (see :func:`sphinx_autocodelink.setup`).
-Reuses Sphinx-Gallery's own ``sphx-glr-thumbcontainer`` markup -- including its
-CSS-only hover tooltip (``content: attr(tooltip)``, no JS involved) -- and
-sphinx-design's card/grid/carousel markup, both already loaded site-wide once those
-two extensions are active (Sphinx-Gallery is a hard requirement of this module's
-caller; sphinx-design is not, but its CSS is inert, not an error, if absent).
-
-The HTML below is hand-built rather than emitted as ``.. card-carousel::``/``..
-card::``/``.. grid::``/Sphinx-Gallery's own thumbnail directives, because it runs
-post-build, rewriting already-built HTML files (see
-:func:`sphinx_autocodelink._embed_links`) well after Sphinx's own RST parser has
-run -- nothing would ever parse those directives at that point. That does mean this
-is pinned to the current HTML output of both extensions, not a stable public
-contract of either.
+Opt-in via ``autocodelink_gallery_cards``. Reuses Sphinx-Gallery's own
+``sphx-glr-thumbcontainer`` markup and sphinx-design's card/grid/carousel markup, both
+already loaded site-wide once those extensions are active. The HTML is hand-built
+because this runs post-build, long after Sphinx's own RST parser, so it is pinned to
+those extensions' current output rather than a public contract.
 """
 
 from __future__ import annotations
@@ -26,61 +17,23 @@ from typing import TYPE_CHECKING
 from docutils import nodes
 from sphinx.util.osutil import relative_uri
 
+from sphinx_autocodelink import _docname_title
+from sphinx_autocodelink import _sorted_refs
+
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
-#: Thumbnails bundled into each carousel card -- medium screens and up show all four
-#: in one row, only truly narrow (mobile-width) screens wrap them 2x2 (see the
-#: row-cols classes in ``_card_html``).
+#: Thumbnails per carousel card: one row, wrapping 2x2 only on mobile widths.
 _THUMBNAILS_PER_CARD = 4
 
 #: Sphinx-Gallery's own intro truncation length (sphinx_gallery.gen_rst docstring).
 _INTRO_MAX_CHARS = 95
 
-#: Overrides Sphinx-Gallery's own thumbnail sizing, which assumes its own gallery
-#: index page's fixed-width grid cells. A carousel card's own grid column is narrower
-#: at some breakpoints (see _card_html) and always variable-width, so a fixed 160px
-#: image can be wider than its actual container -- the container itself doesn't clip
-#: (Sphinx-Gallery's own CSS leaves it `overflow: visible`), so the excess is visible
-#: even through the hover tooltip overlay, which is sized to the container, not the
-#: oversized image. A `.sphx-glr-thumbcontainer img` selector alone isn't enough to
-#: win here either: `max-width`/`max-height` always cap a `width`/`height` override
-#: regardless of selector specificity, so those need overriding explicitly too. Also
-#: fixes the image to a uniform size regardless of title length. The title itself is
-#: never clipped -- no fixed height, no line-clamp -- so a long title always shows in
-#: full, wrapping to as many lines as it needs; `min-height` just keeps a short title's
-#: box from being shorter than a two-line one. `.sd-col` (a column flex container)
-#: already stretches to match its row's tallest thumbnail, the same way Sphinx-Gallery's
-#: own grid rows do, but a column flex container only stretches children on the *cross*
-#: axis (width); the thumbcontainer's own `height: 100%` is what fills that height on
-#: the *main* axis instead, so shorter thumbnails still line up evenly rather than
-#: leaving a gap below them. `width: 100%` and `min-width: 0` on the title are needed
-#: too: the thumbcontainer is a flex column (Sphinx-Gallery's own layout), and a flex
-#: item's `min-width` defaults to `auto` -- its unwrapped content width -- rather than
-#: the container's, so a long title can overflow past both edges of its own card
-#: instead of wrapping to fit it.
-#:
-#: sphinx-design's own grid gutters are horizontal-only (bootstrap-style: `.sd-row`
-#: gets a negative side margin, `.sd-col` a matching positive side padding, `row-gap`
-#: is never set) and layered under an extra `.sd-container-fluid` side padding on top
-#: of that -- so by default the edge-to-thumbnail gap ends up wider than, and
-#: different from, the between-thumbnail gap, while there's no vertical gap between
-#: wrapped rows at all. Zeroing the container's own padding and giving the row a
-#: matching negative margin/positive column padding pair collapses the outer edge
-#: back down to just the card body's own padding (equal on all four sides by
-#: default), and setting `column-gap: 0` (the horizontal gap comes from the
-#: margin/padding pair, not this) plus an explicit `row-gap` makes the vertical gap
-#: between wrapped rows match that same value.
-#:
-#: The last block fixes a layout shift: sphinx-design's own carousel CSS is
-#: `overflow-x: hidden`, switching to `overflow-x: auto` only on `:hover`/`:focus` --
-#: so a non-overlay scrollbar (its track occupies real layout space, unlike macOS's
-#: overlay style) only appears, and only then claims its ~8px of height, once the
-#: mouse arrives, nudging every element below the carousel down for as long as the
-#: mouse stays there. `overflow-x: scroll` always reserves that space, whether or not
-#: the mouse is over it; the thumb/track are then made transparent by default and
-#: given a visible color only on hover/focus, so the *reserved space* stays constant
-#: while the *scrollbar's visibility* still toggles the way sphinx-design's did.
+#: Sizes thumbnails to the carousel's own variable-width columns rather than
+#: Sphinx-Gallery's fixed grid cells; rebuilds sphinx-design's horizontal-only gutters
+#: as a matching negative-margin/padding pair, so wrapped rows get an equal vertical gap
+#: (the horizontal one comes from that pair, not from ``column-gap``); and reserves the
+#: scrollbar's space at all times so hovering the carousel doesn't shift the page.
 _CAROUSEL_STYLE = (
     '<style>'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden;height:100%}'
@@ -112,21 +65,11 @@ _CAROUSEL_STYLE = (
 )
 
 
-def _docname_title(app: Sphinx, docname: str) -> str:
-    """Return ``docname``'s page title, or the docname itself if it has none on record."""
-    title_node = app.env.titles.get(docname)
-    return title_node.astext() if title_node is not None else docname
-
-
 def _thumbnail_source_path(app: Sphinx, docname: str) -> str | None:
     """Return the source-relative path Sphinx-Gallery wrote an example's thumbnail to.
 
-    Matches ``sphinx_gallery.backreferences._thumbnail_div``'s own convention: the
-    example's own directory, then ``images/thumb/sphx_glr_<example filename>_thumb.<ext>``.
-    The extension varies -- an animated example's own thumbnail is a ``.gif``, a plain
-    one a ``.png`` -- so it's found on disk (mirroring how Sphinx-Gallery itself finds
-    its own thumbnail file) rather than assumed. None if no such file was ever written
-    (the example never rendered, or hasn't been built with an image scraper enabled).
+    ``<example dir>/images/thumb/sphx_glr_<name>_thumb.<ext>``, with the extension
+    found on disk since it varies. None if no thumbnail was ever written.
     """
     path = PurePosixPath(docname)
     thumb_dir = Path(app.srcdir) / path.parent / 'images' / 'thumb'
@@ -139,10 +82,7 @@ def _thumbnail_source_path(app: Sphinx, docname: str) -> str | None:
 def _thumbnail_href(app: Sphinx, docname: str, source_path: str) -> str | None:
     """Return the built thumbnail's URL relative to ``docname``, or None if never built.
 
-    Looked up via Sphinx's own image-collection bookkeeping (``env.images``) rather
-    than assumed: the HTML builder flattens every referenced image into a single
-    ``_images/`` directory, renaming on a basename collision, so the final filename
-    isn't necessarily the source one.
+    Read from ``env.images``, since the builder renames images on a basename collision.
     """
     entry = app.env.images.get(source_path)
     if entry is None:
@@ -154,13 +94,8 @@ def _thumbnail_href(app: Sphinx, docname: str, source_path: str) -> str | None:
 def _page_intro(app: Sphinx, docname: str) -> str:
     """Return the first paragraph of ``docname``'s own page, truncated for a tooltip.
 
-    Mirrors ``sphinx_gallery.gen_rst.extract_intro_and_title``: the first paragraph
-    *within the title's own section*, falling back to the page's title if it has none,
-    collapsed to one line and capped at the same length Sphinx-Gallery itself uses.
-    Scoped to the title's section rather than just "the first paragraph on the page"
-    because Sphinx-Gallery inserts its own boilerplate note (pointing readers at the
-    downloads at the bottom) *before* the title on every example page -- naively taking
-    the very first paragraph anywhere picks that up instead of the real intro.
+    Scoped to the title's own section, so Sphinx-Gallery's boilerplate note above the
+    title isn't mistaken for the intro. Falls back to the title itself.
     """
     paragraph = None
     try:
@@ -183,10 +118,7 @@ def _thumbnail_html(
 ) -> str:
     """Render one Sphinx-Gallery-style thumbnail card for ``ref``, linked from ``docname``.
 
-    ``usage_count`` -- how many times ``ref``'s own recorded source used the target this
-    carousel is a "Used In" entry for -- is shown as a subtitle line under the title when
-    given (``autocodelink_show_usage_count``; see :func:`render_gallery_carousel`), None
-    to omit it entirely rather than show a meaningless "0 uses".
+    ``usage_count`` becomes a subtitle under the title, or None to omit it.
     """
     href = app.builder.get_relative_uri(docname, ref)
     source_path = _thumbnail_source_path(app, ref)
@@ -234,23 +166,12 @@ def render_gallery_carousel(
 ) -> str:
     """Render ``refs`` as a card-carousel of Sphinx-Gallery-style thumbnail cards.
 
-    Sorted by title (``autocodelink_sort``'s default, ``'alphabetical'``), or by
-    ``usage_counts`` descending when it's ``'frequency'`` instead, ties broken
-    alphabetically -- the same ordering :func:`sphinx_autocodelink._render_ref_list`
-    applies to a plain link list. With ``autocodelink_show_usage_count`` on --
-    independent of sort mode -- each card's own count is shown the same way that
-    function shows it: as plain text, not part of the link. ``_THUMBNAILS_PER_CARD``
-    thumbnails per card, as many cards as needed, in one horizontally-scrolling
-    carousel -- this replaces the usual "N more" collapse entirely, at any length.
+    Ordered and counted like :func:`sphinx_autocodelink._render_ref_list`, in one
+    horizontally-scrolling carousel instead of a collapsing list.
     """
     usage_counts = usage_counts or {}
-    sort_frequency = getattr(app.config, 'autocodelink_sort', 'alphabetical') == 'frequency'
     show_counts = getattr(app.config, 'autocodelink_show_usage_count', False)
-    pairs = [(_docname_title(app, ref), ref) for ref in refs]
-    if sort_frequency:
-        labeled = sorted(pairs, key=lambda pair: (-usage_counts.get(pair[1], 0), pair[0]))
-    else:
-        labeled = sorted(pairs)
+    labeled = _sorted_refs(refs, app=app, usage_counts=usage_counts)
     thumbnails = [
         _thumbnail_html(
             app,

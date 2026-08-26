@@ -1,9 +1,11 @@
+*.egg-info/
 .DS_Store
 .coverage
 .coverage.*
 .idea/
 .venv/
-*.egg-info/
 __pycache__/
+build/
+dist/
 sphinx_autocodelink/_version.py
 uv.lock

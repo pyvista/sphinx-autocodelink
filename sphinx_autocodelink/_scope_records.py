@@ -1,16 +1,8 @@
 """Turn traced scopes and call sites into records, retaining nothing that was traced.
 
-:mod:`sphinx_autocodelink._tracing` reports two kinds of observation about a
-running example: a scope (a function frame of the example's own code, with its
-real locals) and a call site (with the callable the interpreter actually
-invoked). Both are turned into plain string records here, inside the callback,
-so nothing the example built -- a plotter, a mesh, anything holding a native
-resource -- is still referenced once the callback returns.
-
-Between them the two cover what an example's top-level namespace alone cannot:
-a scope resolves the identifiers of a helper function against that helper's own
-locals, and an observed call resolves a receiver no dotted name can address
-(``dataset['label_map'].contour_labels()``) against the real callable.
+A scope resolves a helper function's identifiers against its own locals; an observed
+call resolves a receiver no dotted name can address, like a subscript. Both resolve to
+plain strings inside the callback, so no traced object outlives it.
 """
 
 from __future__ import annotations
@@ -34,9 +26,7 @@ if TYPE_CHECKING:
 
     from sphinx_autocodelink import _Record
 
-#: Most records one traced example may contribute, as a backstop against a
-#: pathological example (a deep recursion of distinct scopes, a generated
-#: script) growing this without bound.
+#: Most records one traced example may contribute.
 MAX_RECORDS = 5000
 
 
@@ -72,8 +62,7 @@ class _SourceIndex:
         self.calls_by_line: dict[int, list[ast.Call]] = {}
         for node in ast.walk(ast.parse(source)):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                # A decorated function's code object reports the first decorator's
-                # line as its own, not the `def`'s -- so both are keys here.
+                # A decorated function reports its first decorator's line, not the `def`'s.
                 for lineno in {node.lineno, *(d.lineno for d in node.decorator_list)}:
                     self.functions.setdefault((node.name, lineno), node)
             elif isinstance(node, ast.Lambda):
@@ -84,9 +73,9 @@ class _SourceIndex:
                 self.calls_by_line.setdefault(node.lineno, []).append(node)
 
 
-#: Parsed source per traced filename, and instruction positions per traced code object.
-#: Both are cleared between examples (:func:`clear_caches`); code objects hold no
-#: example data, only constants, so caching them for one example retains nothing live.
+#: Parsed source per traced filename, and instruction positions per code object, both
+#: cleared between examples by :func:`clear_caches`. Code objects hold only constants,
+#: so keying on them retains nothing the example built.
 _INDEXES: dict[str, _SourceIndex | None] = {}
 _POSITIONS: dict[CodeType, list[Any]] = {}
 
@@ -112,10 +101,7 @@ def _index_for(filename: str) -> _SourceIndex | None:
 def _scope_source(node: ast.AST) -> str | None:
     """Return just the statements that run in ``node``'s own scope, as source.
 
-    Nested definitions are pruned rather than included: each gets its own scope
-    reported separately, so leaving them in would resolve their identifiers a
-    second time -- against the wrong namespace, and double-counting whatever
-    did resolve in both.
+    Nested definitions are pruned; each is reported as its own scope.
     """
     if isinstance(node, ast.Lambda):
         body: list[ast.stmt] = [ast.Expr(value=node.body)]
@@ -130,11 +116,10 @@ def _scope_source(node: ast.AST) -> str | None:
         return None
 
 
-def scope_records(code: CodeType, frame: FrameType) -> list[_Record]:
+def records_for_scope(code: CodeType, frame: FrameType) -> list[_Record]:
     """Return records for one returning frame, resolved against that frame's own scope.
 
-    The module scope is skipped: Sphinx-Gallery's own per-block recording
-    already covers it, against the same globals.
+    The module scope is skipped; per-block recording already covers it.
     """
     if code.co_name == '<module>':
         return []
@@ -170,8 +155,7 @@ def _call_node(code: CodeType, instruction_offset: int) -> tuple[_SourceIndex, a
         return None
     node = index.calls.get((lineno, col or 0, end_lineno, end_col or 0))
     if node is None:
-        # Column offsets are reported per instruction, which future bytecode changes
-        # could shift; a line with exactly one call on it is unambiguous without them.
+        # A line with exactly one call on it is unambiguous without column offsets.
         on_line = index.calls_by_line.get(lineno, ())
         node = on_line[0] if len(on_line) == 1 else None
     return None if node is None else (index, node)
@@ -190,16 +174,13 @@ def _call_chain(node: ast.expr) -> tuple[str, tuple[str, ...], ast.Call] | None:
     return None if target is None else (target, tuple(reversed(parts)), cursor)
 
 
-def call_records(
+def records_for_call(
     code: CodeType, instruction_offset: int, func: Any, frame: FrameType
 ) -> list[_Record]:
     """Return records for one observed call site, from the callable actually invoked.
 
-    A call the source-and-namespace resolution already reaches is left alone --
-    a receiver addressable by a dotted name in the calling frame, or a chain off
-    a call whose return type resolves. The scope (or block) recording covering
-    that frame produces the same record, and recording it here as well would
-    count one use twice.
+    A call the name-based resolution already reaches is skipped, so one use isn't
+    counted twice.
     """
     found = _call_node(code, instruction_offset)
     if found is None:
@@ -232,11 +213,11 @@ class ExampleRecorder:
 
     def on_scope(self, code: CodeType, frame: FrameType) -> None:
         """Record everything the returning frame's own scope resolves."""
-        self._add(scope_records(code, frame))
+        self._add(records_for_scope(code, frame))
 
     def on_call(self, code: CodeType, instruction_offset: int, func: Any, frame: FrameType) -> None:
         """Record what the call site resolves that no name in scope could."""
-        self._add(call_records(code, instruction_offset, func, frame))
+        self._add(records_for_call(code, instruction_offset, func, frame))
 
     def _add(self, records: list[_Record]) -> None:
         """Append ``records``, up to :data:`MAX_RECORDS`."""

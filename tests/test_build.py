@@ -94,10 +94,7 @@ def test_autocodelink_index(tmp_path):
     for page in ('index.html', 'auto_examples/plot_thing.html', 'auto_examples/plot_other.html'):
         assert f'href="{page}"' in dl
 
-    # default grouping (3 categories apply to pkg.thing: 'Documentation' for the
-    # directive-recorded index page, 'Sphinx Gallery' for the scraper-recorded examples,
-    # 'Docstring Examples' for pkg.documented_example's own docstring) -- and titles, not
-    # docnames, by default.
+    # Default grouping and titles: all 3 categories apply to pkg.thing.
     grouped = _block_after(refs, 'since 3 categories apply):')
     groups = dict(
         re.findall(
@@ -166,11 +163,7 @@ def test_sort_alphabetical_by_default(tmp_path):
 
 
 def test_sort_frequency_ranks_by_usage_and_accumulates_across_spellings(tmp_path):
-    # index.rst references pkg.thing twice, through two different spellings of the same
-    # object -- once as `pkg.thing()`, once (inside a helper) as `local_ref.thing()`, after
-    # `local_ref = pkg`. Both must count toward the same page's total, not just the last one
-    # resolved -- otherwise this wouldn't outrank api.html's and the gallery examples' single
-    # reference each.
+    # index.rst spells pkg.thing two ways; both must count toward its one total.
     outdir, _ = _build(tmp_path, confoverrides={'autocodelink_sort': 'frequency'})
     refs = (outdir / 'refs.html').read_text()
     forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')

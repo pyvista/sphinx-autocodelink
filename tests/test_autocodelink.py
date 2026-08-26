@@ -38,16 +38,16 @@ needs_monitoring = pytest.mark.skipif(
 
 
 def test_accessed_names_syntax_error():
-    assert autolink._accessed_names('def bad(:\n') == set()
+    assert autolink._collect('def bad(:\n').accessed == set()
 
 
 def test_accessed_names_call_chain_not_rooted_in_name():
     # `.plot` on a call result has nothing to look up, but the inner `pv.Sphere` does.
-    assert autolink._accessed_names('pv.Sphere().plot()') == {'pv.Sphere'}
+    assert autolink._collect('pv.Sphere().plot()').accessed == {'pv.Sphere'}
 
 
 def test_accessed_names_bare_name():
-    assert autolink._accessed_names('x') == {'x'}
+    assert autolink._collect('x').accessed == {'x'}
 
 
 def test_dotted_name_not_rooted_in_name():
@@ -174,15 +174,16 @@ def test_candidate_names_bare_module():
 
 
 def test_call_chains_no_intermediate_variable():
-    assert autolink._call_chains('pv.Sphere().plot()') == {('pv.Sphere', ('plot',))}
+    assert autolink._collect('pv.Sphere().plot()').call_chains == {('pv.Sphere', ('plot',))}
 
 
 def test_call_chains_bound_method():
-    assert autolink._call_chains('mesh.copy().plot()') == {('mesh.copy', ('plot',))}
+    assert autolink._collect('mesh.copy().plot()').call_chains == {('mesh.copy', ('plot',))}
 
 
 def test_call_chains_multi_attribute_trailing():
-    assert autolink._call_chains('pv.Sphere().points.size') == {('pv.Sphere', ('points', 'size'))}
+    chains = autolink._collect('pv.Sphere().points.size').call_chains
+    assert chains == {('pv.Sphere', ('points', 'size'))}
 
 
 def test_resolve_object():
@@ -1053,10 +1054,8 @@ def test_resolve_link_external():
 
 
 def test_resolve_link_prefers_a_non_aliased_name_for_the_same_target():
-    # A class registers under both its full defining-module path (Sphinx's own
-    # auto-added `:canonical:` cross-reference -- `aliased`) and its short public name,
-    # both pointing at the same page. The non-aliased one must win: it's the name the
-    # object is actually documented under, and what its own backreferences are keyed by.
+    # Both names point at the same page; the non-aliased one is what the object is
+    # documented under, and what its backreferences are keyed by.
     app = SimpleNamespace(
         builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
         config=SimpleNamespace(autocodelink_gallery_cards=False),

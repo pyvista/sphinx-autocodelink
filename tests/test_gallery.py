@@ -84,18 +84,18 @@ def test_report_failure_warns_once(monkeypatch):
 @needs_monitoring
 def test_wants_tracing():
     scraper = sg_gallery.AutoCodeLinkScraper()
-    assert sg_gallery.wants_tracing({'image_scrapers': (scraper,)})
+    assert sg_gallery._wants_tracing({'image_scrapers': (scraper,)})
     # a lone scraper, not in a sequence
-    assert sg_gallery.wants_tracing({'image_scrapers': scraper})
-    assert not sg_gallery.wants_tracing({'image_scrapers': ('matplotlib',)})
-    assert not sg_gallery.wants_tracing(
+    assert sg_gallery._wants_tracing({'image_scrapers': scraper})
+    assert not sg_gallery._wants_tracing({'image_scrapers': ('matplotlib',)})
+    assert not sg_gallery._wants_tracing(
         {'image_scrapers': (sg_gallery.AutoCodeLinkScraper(trace=False),)}
     )
-    assert not sg_gallery.wants_tracing({})
-    assert not sg_gallery.wants_tracing(None)
+    assert not sg_gallery._wants_tracing({})
+    assert not sg_gallery._wants_tracing(None)
 
 
 def test_wants_tracing_needs_monitoring(monkeypatch):
     monkeypatch.setattr(sg_gallery, 'monitoring_available', lambda: False)
     conf = {'image_scrapers': (sg_gallery.AutoCodeLinkScraper(),)}
-    assert not sg_gallery.wants_tracing(conf)
+    assert not sg_gallery._wants_tracing(conf)
