@@ -17,6 +17,7 @@ import pytest
 from sphinx import addnodes
 
 import sphinx_autocodelink as autolink
+from sphinx_autocodelink._tracing import monitoring_available
 
 # typing.get_overloads was added in 3.11 -- see sphinx_autocodelink's own import guard.
 try:
@@ -26,6 +27,10 @@ except ImportError:  # Python 3.10
 
 needs_get_overloads = pytest.mark.skipif(
     get_overloads is None, reason='typing.get_overloads added in Python 3.11'
+)
+
+needs_monitoring = pytest.mark.skipif(
+    not monitoring_available(), reason='sys.monitoring added in Python 3.12'
 )
 
 
@@ -1965,6 +1970,7 @@ def test_expr_candidate_round_trips_through_json():
     assert autolink._from_jsonable(autolink._to_jsonable(record)) == record
 
 
+@needs_monitoring
 def test_wire_gallery_tracing_adds_the_reset_hook():
     from sphinx_autocodelink.gallery import RESET_AUTOCODELINK
     from sphinx_autocodelink.gallery import AutoCodeLinkScraper
@@ -1993,6 +1999,7 @@ def test_stop_gallery_tracing_leaves_no_tracer_running():
     assert sg_gallery._TRACER is None or not sg_gallery._TRACER.active
 
 
+@needs_monitoring
 def test_wire_gallery_tracing_warns_when_nothing_runs_before_an_example(monkeypatch):
     from sphinx_autocodelink.gallery import AutoCodeLinkScraper
 

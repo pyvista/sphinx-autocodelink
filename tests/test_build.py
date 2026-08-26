@@ -6,12 +6,19 @@ from pathlib import Path
 import re
 import shutil
 
+import pytest
 from sphinx.application import Sphinx
+
+from sphinx_autocodelink._tracing import monitoring_available
 
 TINYPAGES = Path(__file__).parent / 'tinypages'
 
 #: Matches sphinx_autocodelink._STD_REF_OPEN.
 STD_REF = '<span class="std std-ref" style="font-weight: bold;">'
+
+needs_monitoring = pytest.mark.skipif(
+    not monitoring_available(), reason='sys.monitoring added in Python 3.12'
+)
 
 
 def _build(tmp_path, *, parallel=1, confoverrides=None):
@@ -312,6 +319,7 @@ def test_autodoc_backrefs(tmp_path):
     assert 'No references found' not in unused_dd
 
 
+@needs_monitoring
 def test_gallery_resolves_a_helper_functions_own_local_scope(tmp_path):
     # plot_scopes.py's `widget` only ever exists inside `show`'s own local scope, and
     # `show` is defined in one cell and called in another -- neither the example's own
@@ -325,6 +333,7 @@ def test_gallery_resolves_a_helper_functions_own_local_scope(tmp_path):
     )
 
 
+@needs_monitoring
 def test_gallery_resolves_a_receiver_no_dotted_name_addresses(tmp_path):
     # `registry['a'].describe()`: the receiver is a subscript, so there's no dotted name
     # to look up at all. Only the trailing attribute is wrapped -- `registry` keeps the
@@ -341,6 +350,7 @@ def test_gallery_resolves_a_receiver_no_dotted_name_addresses(tmp_path):
     )
 
 
+@needs_monitoring
 def test_gallery_traced_names_reach_their_own_used_in_section(tmp_path):
     outdir, _ = _build(tmp_path)
     api = (outdir / 'api.html').read_text()
@@ -349,6 +359,7 @@ def test_gallery_traced_names_reach_their_own_used_in_section(tmp_path):
         assert 'href="auto_examples/plot_scopes.html"' in member
 
 
+@needs_monitoring
 def test_gallery_tracing_survives_joblib_workers(tmp_path):
     outdir, _ = _build(tmp_path, parallel=2)
     example = (outdir / 'auto_examples' / 'plot_scopes.html').read_text()

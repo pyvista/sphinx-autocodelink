@@ -248,6 +248,7 @@ def _call_offset(code, node):
     return 2 * next(i for i, position in enumerate(code.co_positions()) if position == wanted)
 
 
+@needs_monitoring
 def test_call_node_falls_back_to_a_line_with_exactly_one_call(tmp_path):
     path = tmp_path / 'fallback.py'
     path.write_text('def f(reg):\n    return reg["a"].render()\n')
@@ -262,6 +263,7 @@ def test_call_node_falls_back_to_a_line_with_exactly_one_call(tmp_path):
     assert scope_records._call_node(code, offset)[1] is node
 
 
+@needs_monitoring
 def test_call_node_gives_up_on_a_line_with_more_than_one_call(tmp_path):
     path = tmp_path / 'ambiguous.py'
     path.write_text('def f(reg):\n    return reg.one() + reg.two()\n')
@@ -273,6 +275,7 @@ def test_call_node_gives_up_on_a_line_with_more_than_one_call(tmp_path):
     assert scope_records._call_node(code, offset) is None
 
 
+@needs_monitoring
 def test_call_node_ignores_an_offset_past_the_end(tmp_path):
     path = tmp_path / 'past_end.py'
     path.write_text('def f(reg):\n    return reg["a"].render()\n')
@@ -281,6 +284,7 @@ def test_call_node_ignores_an_offset_past_the_end(tmp_path):
     assert scope_records._call_node(code, 10**6) is None
 
 
+@needs_monitoring
 def test_call_records_ignores_an_offset_with_no_call(tmp_path):
     path = tmp_path / 'nocall.py'
     path.write_text('x = 1\n')
@@ -341,6 +345,7 @@ def test_scope_records_skips_the_module_scope(tmp_path):
     assert scope_records.scope_records(module_code, frame) == []
 
 
+@needs_monitoring
 def test_call_records_of_a_receiver_no_dotted_name_addresses(tmp_path):
     frame = _frame_from(tmp_path, 'exprcall.py', "    reg['a'].render()\n", Registry())
     index = scope_records._index_for(frame.f_code.co_filename)
@@ -351,6 +356,7 @@ def test_call_records_of_a_receiver_no_dotted_name_addresses(tmp_path):
     assert _exprs(records) == {"reg['a'].render": records[0].candidates}
 
 
+@needs_monitoring
 def test_call_records_skips_what_the_frames_own_names_already_resolve(tmp_path):
     frame = _frame_from(
         tmp_path, 'dotted.py', "    widget = reg['a']\n    widget.render()\n", Registry()
@@ -363,6 +369,7 @@ def test_call_records_skips_what_the_frames_own_names_already_resolve(tmp_path):
     assert records == []
 
 
+@needs_monitoring
 def test_call_records_of_a_dotted_name_the_frame_no_longer_holds(tmp_path):
     frame = _frame_from(
         tmp_path,
@@ -379,6 +386,7 @@ def test_call_records_of_a_dotted_name_the_frame_no_longer_holds(tmp_path):
     assert record.candidates[0].endswith('Widget.render')
 
 
+@needs_monitoring
 def test_call_records_ignores_a_callable_with_no_documented_name(tmp_path):
     frame = _frame_from(tmp_path, 'nocand.py', "    reg['a'].render()\n", Registry())
     index = scope_records._index_for(frame.f_code.co_filename)
@@ -387,6 +395,7 @@ def test_call_records_ignores_a_callable_with_no_documented_name(tmp_path):
     assert scope_records.call_records(frame.f_code, offset, functools.partial(len), frame) == []
 
 
+@needs_monitoring
 def test_call_records_ignores_a_call_that_is_not_on_an_attribute(tmp_path):
     frame = _frame_from(tmp_path, 'notattr.py', '    (lambda: 1)()\n', Registry())
     index = scope_records._index_for(frame.f_code.co_filename)
@@ -491,6 +500,7 @@ def test_stop_and_close_are_safe_before_anything_started():
     assert tracer.active is False
 
 
+@needs_monitoring
 def test_call_records_skips_a_chain_off_a_call_the_return_type_resolves(tmp_path):
     frame = _frame_from(tmp_path, 'chain.py', '    make_widget().render()\n', Registry())
     index = scope_records._index_for(frame.f_code.co_filename)

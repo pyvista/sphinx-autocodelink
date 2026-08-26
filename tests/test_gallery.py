@@ -10,6 +10,10 @@ import pytest
 import sphinx_autocodelink as autolink
 from sphinx_autocodelink import gallery as sg_gallery
 
+needs_monitoring = pytest.mark.skipif(
+    not sg_gallery.monitoring_available(), reason='sys.monitoring added in Python 3.12'
+)
+
 
 def test_scraper_records(tmp_path):
     scraper = sg_gallery.AutoCodeLinkScraper()
@@ -54,9 +58,7 @@ def test_scraper_writes_traced_records_too(tmp_path):
     assert sg_gallery._RECORDER.records == []
 
 
-@pytest.mark.skipif(
-    not sg_gallery.monitoring_available(), reason='sys.monitoring added in Python 3.12'
-)
+@needs_monitoring
 def test_reset_starts_tracing_before_an_example_and_stops_after():
     sg_gallery.reset_autocodelink({}, 'plot_thing.py', 'before')
     assert sg_gallery._TRACER.active
@@ -79,6 +81,7 @@ def test_report_failure_warns_once(monkeypatch):
     assert len(warnings) == 1
 
 
+@needs_monitoring
 def test_wants_tracing():
     scraper = sg_gallery.AutoCodeLinkScraper()
     assert sg_gallery.wants_tracing({'image_scrapers': (scraper,)})

@@ -157,7 +157,11 @@ def _call_node(code: CodeType, instruction_offset: int) -> tuple[_SourceIndex, a
         return None
     positions = _POSITIONS.get(code)
     if positions is None:
-        positions = _POSITIONS[code] = list(code.co_positions())
+        # co_positions() is 3.11+; nothing calls this below 3.12 anyway (no sys.monitoring).
+        get_positions = getattr(code, 'co_positions', None)
+        if get_positions is None:  # pragma: no cover -- Python 3.10 only
+            return None
+        positions = _POSITIONS[code] = list(get_positions())
     try:
         lineno, end_lineno, col, end_col = positions[instruction_offset // 2]
     except (IndexError, TypeError, ValueError):
