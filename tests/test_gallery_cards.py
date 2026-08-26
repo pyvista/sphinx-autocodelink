@@ -21,8 +21,21 @@ def _doctree(title_text=None, paragraph_text=None):
     return document
 
 
-def _fake_app(*, titles=None, images=None, doctrees=None, target_uris=None, relative_uris=None):
-    """Build a minimal Sphinx-app-shaped fake for the functions under test."""
+def _fake_app(
+    *,
+    srcdir,
+    titles=None,
+    images=None,
+    doctrees=None,
+    target_uris=None,
+    relative_uris=None,
+):
+    """Build a minimal Sphinx-app-shaped fake for the functions under test.
+
+    ``srcdir`` is a real directory (typically ``tmp_path``): ``_thumbnail_source_path``
+    globs the filesystem for real, so a test exercising it needs one, and every other
+    test needs to pass *some* directory even if it's never actually read.
+    """
     titles = titles or {}
     images = images or {}
     doctrees = doctrees or {}
@@ -36,6 +49,7 @@ def _fake_app(*, titles=None, images=None, doctrees=None, target_uris=None, rela
         return doctrees[docname]
 
     return SimpleNamespace(
+        srcdir=str(srcdir),
         env=SimpleNamespace(titles=titles, images=images, get_doctree=get_doctree),
         builder=SimpleNamespace(
             get_target_uri=lambda docname: target_uris.get(docname, f'{docname}.html'),
@@ -44,28 +58,46 @@ def _fake_app(*, titles=None, images=None, doctrees=None, target_uris=None, rela
     )
 
 
-def test_docname_title_known():
-    app = _fake_app(titles={'page': nodes.title('Page Title', 'Page Title')})
+def _write_thumbnail(srcdir, docname, filename):
+    """Create a real (empty) thumbnail file at the path Sphinx-Gallery would write it to."""
+    thumb_dir = (srcdir / docname).parent / 'images' / 'thumb'
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    (thumb_dir / filename).touch()
+
+
+def test_docname_title_known(tmp_path):
+    app = _fake_app(srcdir=tmp_path, titles={'page': nodes.title('Page Title', 'Page Title')})
     assert cards._docname_title(app, 'page') == 'Page Title'
 
 
-def test_docname_title_unknown_falls_back_to_docname():
-    app = _fake_app()
+def test_docname_title_unknown_falls_back_to_docname(tmp_path):
+    app = _fake_app(srcdir=tmp_path)
     assert cards._docname_title(app, 'page') == 'page'
 
 
-def test_thumbnail_source_path():
-    path = cards._thumbnail_source_path('examples/01-filter/clip_closed_surface')
-    assert path == 'examples/01-filter/images/thumb/sphx_glr_clip_closed_surface_thumb.png'
+def test_thumbnail_source_path_finds_the_real_extension(tmp_path):
+    app = _fake_app(srcdir=tmp_path)
+    docname = 'examples/01-filter/clip_closed_surface'
+    _write_thumbnail(tmp_path, docname, 'sphx_glr_clip_closed_surface_thumb.gif')
+    path = cards._thumbnail_source_path(app, docname)
+    assert path == 'examples/01-filter/images/thumb/sphx_glr_clip_closed_surface_thumb.gif'
 
 
-def test_thumbnail_source_path_top_level_docname():
-    path = cards._thumbnail_source_path('plot_thing')
+def test_thumbnail_source_path_top_level_docname(tmp_path):
+    app = _fake_app(srcdir=tmp_path)
+    _write_thumbnail(tmp_path, 'plot_thing', 'sphx_glr_plot_thing_thumb.png')
+    path = cards._thumbnail_source_path(app, 'plot_thing')
     assert path == 'images/thumb/sphx_glr_plot_thing_thumb.png'
 
 
-def test_thumbnail_href_resolves_via_env_images():
+def test_thumbnail_source_path_none_when_never_written(tmp_path):
+    app = _fake_app(srcdir=tmp_path)
+    assert cards._thumbnail_source_path(app, 'plot_thing') is None
+
+
+def test_thumbnail_href_resolves_via_env_images(tmp_path):
     app = _fake_app(
+        srcdir=tmp_path,
         images={
             'examples/images/thumb/sphx_glr_plot_thing_thumb.png': (
                 {'auto_examples/index'},
@@ -78,35 +110,37 @@ def test_thumbnail_href_resolves_via_env_images():
     assert href == '_images/sphx_glr_plot_thing_thumb.png'
 
 
-def test_thumbnail_href_renamed_on_collision():
+def test_thumbnail_href_renamed_on_collision(tmp_path):
     # env.images renames on a basename collision -- the unique name, not the original
     # basename, is what's actually under _images/ in the built output.
     app = _fake_app(
+        srcdir=tmp_path,
         images={'a/thumb.png': ({'x'}, 'thumb1.png')},
         target_uris={'api': 'api.html'},
     )
     assert cards._thumbnail_href(app, 'api', 'a/thumb.png') == '_images/thumb1.png'
 
 
-def test_thumbnail_href_none_when_never_built():
-    app = _fake_app()
+def test_thumbnail_href_none_when_never_built(tmp_path):
+    app = _fake_app(srcdir=tmp_path)
     assert cards._thumbnail_href(app, 'api', 'nonexistent/thumb.png') is None
 
 
-def test_thumbnail_href_relative_to_a_nested_page():
+def test_thumbnail_href_relative_to_a_nested_page(tmp_path):
     app = _fake_app(
+        srcdir=tmp_path,
         images={'thumb.png': ({'x'}, 'thumb.png')},
         target_uris={'guide/api': 'guide/api.html'},
     )
     assert cards._thumbnail_href(app, 'guide/api', 'thumb.png') == '../_images/thumb.png'
 
 
-def test_page_intro_uses_first_paragraph_after_title():
-    app = _fake_app(doctrees={'ex': _doctree('Title', 'The real intro.')})
+def test_page_intro_uses_first_paragraph_after_title(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Title', 'The real intro.')})
     assert cards._page_intro(app, 'ex') == 'The real intro.'
 
 
-def test_page_intro_skips_content_before_the_title():
+def test_page_intro_skips_content_before_the_title(tmp_path):
     # Sphinx-Gallery inserts its own "go to the end to download" note *before* the
     # title on every example page -- a paragraph anywhere on the page isn't enough.
     document = nodes.document(settings=SimpleNamespace(), reporter=SimpleNamespace())
@@ -116,69 +150,73 @@ def test_page_intro_skips_content_before_the_title():
     section += nodes.paragraph('The real intro.', 'The real intro.')
     document += section
 
-    app = _fake_app(doctrees={'ex': document})
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': document})
     assert cards._page_intro(app, 'ex') == 'The real intro.'
 
 
-def test_page_intro_falls_back_to_title_with_no_paragraph():
+def test_page_intro_falls_back_to_title_with_no_paragraph(tmp_path):
     app = _fake_app(
-        titles={'ex': nodes.title('Title', 'Title')}, doctrees={'ex': _doctree('Title')}
+        srcdir=tmp_path,
+        titles={'ex': nodes.title('Title', 'Title')},
+        doctrees={'ex': _doctree('Title')},
     )
     assert cards._page_intro(app, 'ex') == 'Title'
 
 
-def test_page_intro_falls_back_to_title_on_missing_doctree():
-    app = _fake_app(titles={'ex': nodes.title('Title', 'Title')})
+def test_page_intro_falls_back_to_title_on_missing_doctree(tmp_path):
+    app = _fake_app(srcdir=tmp_path, titles={'ex': nodes.title('Title', 'Title')})
     assert cards._page_intro(app, 'ex') == 'Title'
 
 
-def test_page_intro_collapses_whitespace():
-    app = _fake_app(doctrees={'ex': _doctree('Title', 'Line one\nline two')})
+def test_page_intro_collapses_whitespace(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Title', 'Line one\nline two')})
     assert cards._page_intro(app, 'ex') == 'Line one line two'
 
 
-def test_page_intro_truncates_long_text():
+def test_page_intro_truncates_long_text(tmp_path):
     long_text = 'x' * 200
-    app = _fake_app(doctrees={'ex': _doctree('Title', long_text)})
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Title', long_text)})
     intro = cards._page_intro(app, 'ex')
     assert len(intro) == cards._INTRO_MAX_CHARS
     assert intro.endswith('…')
 
 
-def test_page_intro_leaves_short_text_untouched():
-    app = _fake_app(doctrees={'ex': _doctree('Title', 'Short.')})
+def test_page_intro_leaves_short_text_untouched(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Title', 'Short.')})
     assert cards._page_intro(app, 'ex') == 'Short.'
 
 
-def test_thumbnail_html_includes_image_when_resolvable():
+def test_thumbnail_html_includes_image_when_resolvable(tmp_path):
     app = _fake_app(
+        srcdir=tmp_path,
         titles={'ex': nodes.title('Ex', 'Ex')},
         images={'images/thumb/sphx_glr_ex_thumb.png': ({'x'}, 'sphx_glr_ex_thumb.png')},
         doctrees={'ex': _doctree('Ex', 'An intro.')},
     )
+    _write_thumbnail(tmp_path, 'ex', 'sphx_glr_ex_thumb.png')
     html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex')
     assert '<img src="_images/sphx_glr_ex_thumb.png" alt="">' in html
     assert 'tooltip="An intro."' in html
     assert 'sphx-glr-thumbcontainer' in html
 
 
-def test_thumbnail_html_omits_image_when_unresolvable():
-    app = _fake_app(doctrees={'ex': _doctree('Ex', 'An intro.')})
+def test_thumbnail_html_omits_image_when_unresolvable(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
     html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex')
     assert '<img' not in html
     assert 'sphx-glr-thumbcontainer' in html
 
 
-def test_thumbnail_html_link_text_is_wrapped_in_a_span():
+def test_thumbnail_html_link_text_is_wrapped_in_a_span(tmp_path):
     # Sphinx-Gallery's own CSS only hides this link's text if it's wrapped in a <span> --
     # see the comment in _thumbnail_html.
-    app = _fake_app(doctrees={'ex': _doctree('Ex', 'An intro.')})
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'An intro.')})
     html = cards._thumbnail_html(app, docname='index', ref='ex', title='Ex')
     assert '<a class="reference internal" href="ex.html"><span>Ex</span></a>' in html
 
 
-def test_thumbnail_html_escapes_title_and_tooltip():
-    app = _fake_app(doctrees={'ex': _doctree('Ex', 'A <script> intro & more.')})
+def test_thumbnail_html_escapes_title_and_tooltip(tmp_path):
+    app = _fake_app(srcdir=tmp_path, doctrees={'ex': _doctree('Ex', 'A <script> intro & more.')})
     html = cards._thumbnail_html(app, docname='index', ref='ex', title='A & <Title>')
     assert '<script>' not in html
     assert 'A &amp; &lt;Title&gt;' in html
@@ -192,8 +230,9 @@ def test_card_html_wraps_each_thumbnail_in_a_grid_item():
     assert 'sd-row-cols-lg-4' in html
 
 
-def test_render_gallery_carousel_sorted_by_title():
+def test_render_gallery_carousel_sorted_by_title(tmp_path):
     app = _fake_app(
+        srcdir=tmp_path,
         titles={'b': nodes.title('Bravo', 'Bravo'), 'a': nodes.title('Alpha', 'Alpha')},
         doctrees={'b': _doctree('Bravo', 'Bravo intro.'), 'a': _doctree('Alpha', 'Alpha intro.')},
     )
@@ -201,28 +240,41 @@ def test_render_gallery_carousel_sorted_by_title():
     assert html.index('Alpha') < html.index('Bravo')
 
 
-def test_render_gallery_carousel_wraps_in_carousel_container():
+def test_render_gallery_carousel_wraps_in_carousel_container(tmp_path):
     app = _fake_app(
-        titles={'a': nodes.title('Alpha', 'Alpha')}, doctrees={'a': _doctree('Alpha', 'Intro.')}
+        srcdir=tmp_path,
+        titles={'a': nodes.title('Alpha', 'Alpha')},
+        doctrees={'a': _doctree('Alpha', 'Intro.')},
     )
     html = cards.render_gallery_carousel(['a'], docname='index', app=app)
     assert 'sd-cards-carousel' in html
     assert html.count('sd-card sd-sphinx-override') == 1
 
 
-def test_render_gallery_carousel_chunks_into_multiple_cards():
+def test_render_gallery_carousel_includes_style_once(tmp_path):
+    app = _fake_app(
+        srcdir=tmp_path,
+        titles={'a': nodes.title('Alpha', 'Alpha')},
+        doctrees={'a': _doctree('Alpha', 'Intro.')},
+    )
+    html = cards.render_gallery_carousel(['a'], docname='index', app=app)
+    assert html.count('<style>') == 1
+
+
+def test_render_gallery_carousel_chunks_into_multiple_cards(tmp_path):
     refs = [f'p{i}' for i in range(cards._THUMBNAILS_PER_CARD + 1)]
     app = _fake_app(
+        srcdir=tmp_path,
         titles={ref: nodes.title(ref, ref) for ref in refs},
         doctrees={ref: _doctree(ref, 'Intro.') for ref in refs},
     )
     html = cards.render_gallery_carousel(refs, docname='index', app=app)
     assert html.count('sd-card sd-sphinx-override') == 2
-    assert html.count('sphx-glr-thumbcontainer') == len(refs)
+    assert html.count('<div class="sphx-glr-thumbcontainer"') == len(refs)
 
 
-def test_render_gallery_carousel_empty_refs():
-    app = _fake_app()
+def test_render_gallery_carousel_empty_refs(tmp_path):
+    app = _fake_app(srcdir=tmp_path)
     html = cards.render_gallery_carousel([], docname='index', app=app)
     assert 'sd-cards-carousel' in html
     assert 'sd-card sd-sphinx-override' not in html

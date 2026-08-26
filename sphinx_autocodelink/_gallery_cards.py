@@ -19,6 +19,7 @@ contract of either.
 from __future__ import annotations
 
 from html import escape
+from pathlib import Path
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,29 @@ _THUMBNAILS_PER_CARD = 4
 #: Sphinx-Gallery's own intro truncation length (sphinx_gallery.gen_rst docstring).
 _INTRO_MAX_CHARS = 95
 
+#: Overrides Sphinx-Gallery's own thumbnail sizing, which assumes its own gallery
+#: index page's fixed-width grid cells. A carousel card's own grid column is narrower
+#: at some breakpoints (see _card_html) and always variable-width, so a fixed 160px
+#: image can be wider than its actual container -- the container itself doesn't clip
+#: (Sphinx-Gallery's own CSS leaves it `overflow: visible`), so the excess is visible
+#: even through the hover tooltip overlay, which is sized to the container, not the
+#: oversized image. A `.sphx-glr-thumbcontainer img` selector alone isn't enough to
+#: win here either: `max-width`/`max-height` always cap a `width`/`height` override
+#: regardless of selector specificity, so those need overriding explicitly too. Also
+#: fixes every thumbnail (image and title alike) to the same box size, so cards with
+#: different title lengths still come out a uniform height.
+_CAROUSEL_STYLE = (
+    '<style>'
+    '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden}'
+    '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer img{'
+    'width:100%;max-width:none;height:120px;max-height:none;'
+    'object-fit:cover;display:block}'
+    '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbnail-title{'
+    'height:2.6em;overflow:hidden;display:-webkit-box;'
+    '-webkit-line-clamp:2;-webkit-box-orient:vertical}'
+    '</style>'
+)
+
 
 def _docname_title(app: Sphinx, docname: str) -> str:
     """Return ``docname``'s page title, or the docname itself if it has none on record."""
@@ -42,14 +66,22 @@ def _docname_title(app: Sphinx, docname: str) -> str:
     return title_node.astext() if title_node is not None else docname
 
 
-def _thumbnail_source_path(docname: str) -> str:
-    """Return the source-relative path Sphinx-Gallery writes an example's thumbnail to.
+def _thumbnail_source_path(app: Sphinx, docname: str) -> str | None:
+    """Return the source-relative path Sphinx-Gallery wrote an example's thumbnail to.
 
     Matches ``sphinx_gallery.backreferences._thumbnail_div``'s own convention: the
-    example's own directory, then ``images/thumb/sphx_glr_<example filename>_thumb.png``.
+    example's own directory, then ``images/thumb/sphx_glr_<example filename>_thumb.<ext>``.
+    The extension varies -- an animated example's own thumbnail is a ``.gif``, a plain
+    one a ``.png`` -- so it's found on disk (mirroring how Sphinx-Gallery itself finds
+    its own thumbnail file) rather than assumed. None if no such file was ever written
+    (the example never rendered, or hasn't been built with an image scraper enabled).
     """
     path = PurePosixPath(docname)
-    return str(path.parent / 'images' / 'thumb' / f'sphx_glr_{path.name}_thumb.png')
+    thumb_dir = Path(app.srcdir) / path.parent / 'images' / 'thumb'
+    matches = sorted(thumb_dir.glob(f'sphx_glr_{path.name}_thumb.*'))
+    if not matches:
+        return None
+    return str(path.parent / 'images' / 'thumb' / matches[0].name)
 
 
 def _thumbnail_href(app: Sphinx, docname: str, source_path: str) -> str | None:
@@ -97,7 +129,8 @@ def _page_intro(app: Sphinx, docname: str) -> str:
 def _thumbnail_html(app: Sphinx, *, docname: str, ref: str, title: str) -> str:
     """Render one Sphinx-Gallery-style thumbnail card for ``ref``, linked from ``docname``."""
     href = app.builder.get_relative_uri(docname, ref)
-    thumb_href = _thumbnail_href(app, docname, _thumbnail_source_path(ref))
+    source_path = _thumbnail_source_path(app, ref)
+    thumb_href = _thumbnail_href(app, docname, source_path) if source_path is not None else None
     image = f'<img src="{thumb_href}" alt="">' if thumb_href is not None else ''
     escaped_title = escape(title)
     tooltip = escape(_page_intro(app, ref))
@@ -143,6 +176,7 @@ def render_gallery_carousel(refs: list[str], *, docname: str, app: Sphinx) -> st
         for i in range(0, len(thumbnails), _THUMBNAILS_PER_CARD)
     ]
     return (
+        f'{_CAROUSEL_STYLE}'
         '<div class="sd-sphinx-override sd-cards-carousel sd-card-cols-1 '
         f'sphinx-autocodelink-gallery-carousel">{"".join(cards)}</div>'
     )
