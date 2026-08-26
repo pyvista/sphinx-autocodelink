@@ -55,6 +55,16 @@ _INTRO_MAX_CHARS = 95
 #: a flex column (Sphinx-Gallery's own layout), and a flex item's `min-width` defaults
 #: to `auto` -- its unwrapped content width -- rather than the container's, so a long
 #: title can overflow past both edges of its own card instead of wrapping to fit it.
+#:
+#: The last block fixes a layout shift: sphinx-design's own carousel CSS is
+#: `overflow-x: hidden`, switching to `overflow-x: auto` only on `:hover`/`:focus` --
+#: so a non-overlay scrollbar (its track occupies real layout space, unlike macOS's
+#: overlay style) only appears, and only then claims its ~8px of height, once the
+#: mouse arrives, nudging every element below the carousel down for as long as the
+#: mouse stays there. `overflow-x: scroll` always reserves that space, whether or not
+#: the mouse is over it; the thumb/track are then made transparent by default and
+#: given a visible color only on hover/focus, so the *reserved space* stays constant
+#: while the *scrollbar's visibility* still toggles the way sphinx-design's did.
 _CAROUSEL_STYLE = (
     '<style>'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden}'
@@ -66,6 +76,19 @@ _CAROUSEL_STYLE = (
     'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
     '.sphinx-autocodelink-gallery-carousel .sphinx-autocodelink-usage-count{'
     'height:1.2em;font-size:0.85em;opacity:0.75}'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel{'
+    'overflow-x:scroll!important;scrollbar-color:transparent transparent}'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel::-webkit-scrollbar{height:8px}'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel::-webkit-scrollbar-track{'
+    'background:transparent}'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel::-webkit-scrollbar-thumb{'
+    'background:transparent}'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel:hover,'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel:focus-within{'
+    'scrollbar-color:rgba(128,128,128,.6) transparent}'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel:hover::-webkit-scrollbar-thumb,'
+    '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel:focus-within::-webkit-scrollbar-thumb{'
+    'background:rgba(128,128,128,.6)}'
     '</style>'
 )
 
