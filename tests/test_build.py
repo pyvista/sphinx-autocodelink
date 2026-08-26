@@ -310,3 +310,70 @@ def test_autodoc_backrefs(tmp_path):
     unused_dd = re.search(r'id="pkg\.unused">.*?</dd>', api, re.DOTALL).group()
     assert 'sphinx-autocodelink-backrefs' not in unused_dd
     assert 'No references found' not in unused_dd
+
+
+def test_gallery_resolves_a_helper_functions_own_local_scope(tmp_path):
+    # plot_scopes.py's `widget` only ever exists inside `show`'s own local scope, and
+    # `show` is defined in one cell and called in another -- neither the example's own
+    # top-level namespace nor the defining cell's scrape can resolve `widget.render`.
+    outdir, _ = _build(tmp_path)
+    example = (outdir / 'auto_examples' / 'plot_scopes.html').read_text()
+    assert (
+        '<a class="sphinx-autocodelink-a" href="../api.html#pkg.Widget.render">'
+        '<span class="n">widget</span><span class="o">.</span>'
+        '<span class="n">render</span></a>' in example
+    )
+
+
+def test_gallery_resolves_a_receiver_no_dotted_name_addresses(tmp_path):
+    # `registry['a'].describe()`: the receiver is a subscript, so there's no dotted name
+    # to look up at all. Only the trailing attribute is wrapped -- `registry` keeps the
+    # link its own name resolves to.
+    outdir, _ = _build(tmp_path)
+    example = (outdir / 'auto_examples' / 'plot_scopes.html').read_text()
+    assert (
+        '<a class="sphinx-autocodelink-a" href="../api.html#pkg.Registry">'
+        '<span class="n">registry</span></a><span class="p">[</span>' in example
+    )
+    assert (
+        '<a class="sphinx-autocodelink-a" href="../api.html#pkg.Widget.describe">'
+        '<span class="o">.</span><span class="n">describe</span></a>' in example
+    )
+
+
+def test_gallery_traced_names_reach_their_own_used_in_section(tmp_path):
+    outdir, _ = _build(tmp_path)
+    api = (outdir / 'api.html').read_text()
+    for name in ('pkg.Widget.render', 'pkg.Widget.describe'):
+        member = re.search(rf'id="{re.escape(name)}">.*?</dd>', api, re.DOTALL).group()
+        assert 'href="auto_examples/plot_scopes.html"' in member
+
+
+def test_gallery_tracing_survives_joblib_workers(tmp_path):
+    outdir, _ = _build(tmp_path, parallel=2)
+    example = (outdir / 'auto_examples' / 'plot_scopes.html').read_text()
+    assert 'href="../api.html#pkg.Widget.render"' in example
+    assert 'href="../api.html#pkg.Widget.describe"' in example
+
+
+def test_gallery_tracing_can_be_turned_off(tmp_path):
+    # `trace=False` on the scraper is the kill switch: the top-level namespace still
+    # records, everything only its own scopes could resolve stops.
+    srcdir = tmp_path / 'src'
+    shutil.copytree(TINYPAGES, srcdir)
+    conf = srcdir / 'conf.py'
+    conf.write_text(
+        conf.read_text().replace('AutoCodeLinkScraper()', 'AutoCodeLinkScraper(trace=False)')
+    )
+    app = Sphinx(
+        srcdir=str(srcdir),
+        confdir=str(srcdir),
+        outdir=str(tmp_path / 'out'),
+        doctreedir=str(tmp_path / 'doctrees'),
+        buildername='html',
+    )
+    app.build()
+    example = (tmp_path / 'out' / 'auto_examples' / 'plot_scopes.html').read_text()
+    assert 'href="../api.html#pkg.Registry"' in example
+    assert 'href="../api.html#pkg.Widget.render"' not in example
+    assert 'href="../api.html#pkg.Widget.describe"' not in example

@@ -6,3 +6,9 @@ API
 .. autofunction:: pkg.unused
 
 .. autofunction:: pkg.documented_example
+
+.. autoclass:: pkg.Widget
+   :members:
+
+.. autoclass:: pkg.Registry
+   :members:
