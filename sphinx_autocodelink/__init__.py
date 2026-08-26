@@ -860,8 +860,10 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
     #: accumulate more than one record for the same target (e.g. Sphinx-Gallery records
     #: one block per code cell, and more than one cell in the same example can reference
     #: it), which the dedup below deliberately collapses for link-embedding purposes but
-    #: not for this count.
-    usage_counts: dict[str, dict[str, int]] = {}
+    #: not for this count -- nor does a page reaching the same target through more than
+    #: one *accessed* spelling (``pkg.thing`` and, after `ref = pkg`, ``ref.thing``), so
+    #: this accumulates rather than overwrites.
+    usage_counts: dict[str, Counter[str]] = {}
 
     for docname, candidates in records.items():
         out_file = Path(app.outdir) / (app.builder.get_target_uri(docname))
@@ -897,7 +899,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     name, link = resolved
                     resolved_calls[call_key] = link
                     backrefs.setdefault(name, set()).add(docname)
-                    usage_counts.setdefault(name, {})[docname] = call_occurrences[call_key]
+                    usage_counts.setdefault(name, Counter())[docname] += call_occurrences[call_key]
             else:
                 if candidate.accessed in resolved_names:
                     continue
@@ -913,7 +915,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                     name, link = resolved
                     resolved_names[candidate.accessed] = link
                     backrefs.setdefault(name, set()).add(docname)
-                    usage_counts.setdefault(name, {})[docname] = name_occurrences[
+                    usage_counts.setdefault(name, Counter())[docname] += name_occurrences[
                         candidate.accessed
                     ]
         if not resolved_names and not resolved_calls:

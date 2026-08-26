@@ -1099,6 +1099,26 @@ def test_render_grouped_refs_sorts_by_the_renamed_label_not_the_category():
     assert labels == ['Alpha', 'Beta', 'Zeta']
 
 
+def test_render_grouped_refs_threads_usage_counts_into_each_group():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_category_labels={}, autocodelink_sort='frequency'),
+    )
+    html = autolink._render_grouped_refs(
+        ['a', 'b', 'c'],
+        docname='index',
+        app=app,
+        categories={'a': 'Docstring Examples', 'b': 'Docstring Examples', 'c': 'Documentation'},
+        show_titles=False,
+        group_mode='always',
+        usage_counts={'a': 1, 'b': 9},
+    )
+    # 'Docstring Examples' sorts before 'Documentation' alphabetically either way -- the
+    # real signal here is 'b' (usage 9) landing before 'a' (usage 1) within that group.
+    order = re.findall(r'href="([abc])\.html"', html)
+    assert order == ['b', 'a', 'c']
+
+
 def test_render_ref_list_wraps_a_docstring_example_entry_as_a_cross_reference():
     app = SimpleNamespace(
         builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
@@ -1213,6 +1233,87 @@ def test_render_ref_list_gallery_cards_no_gallery_entries_unaffected():
     )
     assert 'sd-cards-carousel' not in html
     assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
+
+
+def test_render_ref_list_sort_alphabetical_by_default():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(),
+    )
+    html = autolink._render_ref_list(['b', 'a', 'c'], docname='index', app=app, show_titles=False)
+    order = re.findall(r'href="([abc])\.html"', html)
+    assert order == ['a', 'b', 'c']
+
+
+def test_render_ref_list_sort_frequency_ranks_by_usage_count():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    html = autolink._render_ref_list(
+        ['a', 'b', 'c'],
+        docname='index',
+        app=app,
+        show_titles=False,
+        usage_counts={'a': 1, 'b': 5, 'c': 3},
+    )
+    order = re.findall(r'href="([abc])\.html"', html)
+    assert order == ['b', 'c', 'a']
+
+
+def test_render_ref_list_sort_frequency_ties_broken_alphabetically():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    html = autolink._render_ref_list(
+        ['c', 'a', 'b'],
+        docname='index',
+        app=app,
+        show_titles=False,
+        usage_counts={'a': 2, 'b': 2, 'c': 2},
+    )
+    order = re.findall(r'href="([abc])\.html"', html)
+    assert order == ['a', 'b', 'c']
+
+
+def test_render_ref_list_sort_frequency_missing_count_sinks_to_bottom():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    html = autolink._render_ref_list(
+        ['a', 'b'], docname='index', app=app, show_titles=False, usage_counts={'a': 1}
+    )
+    order = re.findall(r'href="([ab])\.html"', html)
+    assert order == ['a', 'b']
+
+
+def test_render_ref_list_sort_frequency_no_counts_falls_back_to_alphabetical():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    html = autolink._render_ref_list(['b', 'a'], docname='index', app=app, show_titles=False)
+    order = re.findall(r'href="([ab])\.html"', html)
+    assert order == ['a', 'b']
+
+
+def test_render_ref_list_sort_frequency_orders_the_collapse_split():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='frequency'),
+    )
+    refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
+    # Reverse of index order, so the most-used page is last alphabetically but should
+    # still land in the *visible* (not collapsed) section under frequency sort.
+    usage_counts = {ref: len(refs) - i for i, ref in enumerate(refs)}
+    html = autolink._render_ref_list(
+        refs, docname='index', app=app, show_titles=False, usage_counts=usage_counts
+    )
+    before_details = html.split('<details', 1)[0]
+    visible = re.findall(r'href="(page\d+)\.html"', before_details)
+    assert visible == refs[: autolink._COLLAPSE_VISIBLE]
 
 
 def test_embed_links_skips_on_exception():
@@ -1532,6 +1633,26 @@ def test_render_index_entry_self_reference_only_is_empty(tmp_path):
         group_mode='auto',
     )
     assert result == ''
+
+
+def test_render_index_entry_slices_usage_counts_by_target(tmp_path):
+    app = _fake_app(_fake_env(), tmp_path)
+    app.config.autocodelink_sort = 'frequency'
+    backrefs = {'pkg.thing': {'a', 'b'}, 'pkg.other': {'a', 'b'}}
+    # pkg.thing and pkg.other disagree on which of a/b is more used -- proves the count
+    # actually gets sliced per target, not shared/mixed up across them.
+    usage_counts = {'pkg.thing': {'a': 1, 'b': 9}, 'pkg.other': {'a': 9, 'b': 1}}
+    result = autolink._render_index_entry(
+        'pkg.thing',
+        backrefs,
+        docname='index',
+        app=app,
+        categories={},
+        show_titles=False,
+        group_mode='auto',
+        usage_counts=usage_counts,
+    )
+    assert re.findall(r'href="([ab])"', result) == ['b', 'a']
 
 
 def test_render_full_index_excludes_self_reference(tmp_path):
