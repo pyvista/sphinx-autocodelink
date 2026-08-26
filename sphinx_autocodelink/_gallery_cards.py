@@ -46,16 +46,19 @@ _INTRO_MAX_CHARS = 95
 #: oversized image. A `.sphx-glr-thumbcontainer img` selector alone isn't enough to
 #: win here either: `max-width`/`max-height` always cap a `width`/`height` override
 #: regardless of selector specificity, so those need overriding explicitly too. Also
-#: fixes every thumbnail (image, title, and usage count alike) to the same box size,
-#: so cards with different title lengths still come out a uniform height. The title's
-#: own `line-height` is pinned explicitly too: `height: 2.6em` only clips cleanly at
-#: exactly two lines if each line is `1.3em` tall, and the surrounding theme's actual
-#: line-height isn't guaranteed to match that -- left unset, a taller line-height
-#: clips the second line mid-glyph, reading as if it collided with the usage count.
-#: `width: 100%` and `min-width: 0` on the title are needed too: the thumbcontainer is
-#: a flex column (Sphinx-Gallery's own layout), and a flex item's `min-width` defaults
-#: to `auto` -- its unwrapped content width -- rather than the container's, so a long
-#: title can overflow past both edges of its own card instead of wrapping to fit it.
+#: fixes the image to a uniform size regardless of title length. The title itself is
+#: never clipped -- no fixed height, no line-clamp -- so a long title always shows in
+#: full, wrapping to as many lines as it needs; `min-height` just keeps a short title's
+#: box from being shorter than a two-line one. `.sd-col` (a column flex container)
+#: already stretches to match its row's tallest thumbnail, the same way Sphinx-Gallery's
+#: own grid rows do, but a column flex container only stretches children on the *cross*
+#: axis (width); the thumbcontainer's own `height: 100%` is what fills that height on
+#: the *main* axis instead, so shorter thumbnails still line up evenly rather than
+#: leaving a gap below them. `width: 100%` and `min-width: 0` on the title are needed
+#: too: the thumbcontainer is a flex column (Sphinx-Gallery's own layout), and a flex
+#: item's `min-width` defaults to `auto` -- its unwrapped content width -- rather than
+#: the container's, so a long title can overflow past both edges of its own card
+#: instead of wrapping to fit it.
 #:
 #: sphinx-design's own grid gutters are horizontal-only (bootstrap-style: `.sd-row`
 #: gets a negative side margin, `.sd-col` a matching positive side padding, `row-gap`
@@ -80,13 +83,12 @@ _INTRO_MAX_CHARS = 95
 #: while the *scrollbar's visibility* still toggles the way sphinx-design's did.
 _CAROUSEL_STYLE = (
     '<style>'
-    '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden}'
+    '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden;height:100%}'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer img{'
     'width:100%;max-width:none;height:120px;max-height:none;'
     'object-fit:cover;display:block}'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbnail-title{'
-    'width:100%;min-width:0;height:2.6em;line-height:1.3em;overflow:hidden;'
-    'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
+    'width:100%;min-width:0;min-height:2.6em;line-height:1.3em}'
     '.sphinx-autocodelink-gallery-carousel .sphinx-autocodelink-usage-count{'
     'height:1.2em;font-size:0.85em;opacity:0.75}'
     '.sphinx-autocodelink-gallery-carousel .sd-container-fluid{padding:0}'
