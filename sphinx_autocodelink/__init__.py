@@ -1,20 +1,7 @@
 """Dynamic hyperlinking of identifiers in already-executed Sphinx code output.
 
-Resolves each identifier against the real namespace it executed in, rather
-than inferring its type statically (cf. sphinx-codeautolink). Never executes
-anything itself, by default: a consumer that already executes example code
-for its own purposes (e.g. to render a figure) calls :func:`record_namespace`
-with the resulting namespace; call :func:`setup` from that consumer's own
-Sphinx ``setup(app)`` to wire up link embedding. The one opt-in exception is
-``autocodelink_doctest_blocks`` -- see :func:`setup`.
-
-Limitations: a call with no intermediate variable (``pv.Sphere().plot()``) resolves its
-trailing attribute from the call's return annotation -- matched against the call's own
-literal arguments when the callable is ``@overload``-decorated (e.g. a ``load: bool``
-toggle between a dataset and a bare filename), otherwise from the first resolvable member
-of a plain or unioned annotation. Root identifiers that only ever exist inside a script's
-own helper functions (never in its top-level namespace) need
-:func:`exec_with_local_scopes` instead of a plain ``exec()`` to resolve.
+Resolves each identifier against the real namespace it executed in, rather than
+inferring its type statically. See the README for configuration and usage.
 """
 
 from __future__ import annotations
@@ -35,8 +22,7 @@ import sys
 from typing import TYPE_CHECKING
 from typing import Any
 
-# typing.get_overloads was added in 3.11; on 3.10 _resolve_via_overloads always falls back
-# to _call_return_type's own best-effort guess instead (see there for why that's safe).
+# typing.get_overloads was added in 3.11.
 try:
     from typing import get_overloads
 except ImportError:  # Python 3.10
@@ -69,34 +55,18 @@ _INDEX_DOCS_ATTR = 'sphinx_autocodelink_index_docs'
 #: for grouping backreferences by where they came from. Untagged docnames have no entry.
 _CATEGORY_ATTR = 'sphinx_autocodelink_categories'
 
-#: Display label for a referencing page with no recorded category -- i.e. everything
-#: that isn't :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s own Sphinx-Gallery
-#: integration: the standalone ``.. autocodelink::`` directive used bare, or a third-party
-#: extension calling :func:`record_namespace` directly (e.g. a ``.. plot::``-style
-#: directive executing a docstring's own Examples section).
+#: Display label for a referencing page with no recorded category.
 _UNCATEGORIZED_LABEL = 'Documentation'
 
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
 
-#: Wraps a "Used In" entry's own text in the same ``<code class="xref ...">`` markup a real
-#: ``:class:``/``:func:``/etc. cross-reference renders with, so a theme's own styling for those
-#: (bold, a distinct color from a plain page link) applies here too -- for an entry that's
-#: itself another documented object's own page (the "Docstring Examples" category), which is
-#: exactly what a real xref would point at.
+#: Markup a real ``:class:``/``:func:`` cross-reference renders with.
 _XREF_OPEN = '<code class="xref py py-obj docutils literal notranslate">'
 _XREF_CLOSE = '</code>'
 
-#: Wraps a "Used In" entry's own text in the same ``<span class="std std-ref">`` markup a real
-#: ``:ref:`` role renders with, plus an explicit bold weight: unlike a ``:class:``/``:func:``/
-#: etc. cross-reference (rendered as ``<code>``, which most themes already bold on their own,
-#: from a generic "code inside a link" rule -- no ``:ref:``-specific styling needed), a plain
-#: ``<span>`` gets no such rule anywhere, in any theme checked so far. Without forcing it, a
-#: ``:ref:``-style entry would end up visually identical to an uncategorized plain link, losing
-#: the distinction the category itself draws. For :data:`DEFAULT_GALLERY_CATEGORY`
-#: specifically: a real, structured page with a real anchor, same as what a ``:ref:`` points
-#: at -- unlike an uncategorized or custom-tagged entry, which is just "some page" with
-#: nothing that specific to point at, and stays a plain link.
+#: Markup a real ``:ref:`` role renders with, bolded explicitly since no theme styles a
+#: bare ``<span>``.
 _STD_REF_OPEN = '<span class="std std-ref" style="font-weight: bold;">'
 _STD_REF_CLOSE = '</span>'
 
@@ -126,13 +96,7 @@ _NAME_CLASS_RE = re.compile(r'class="n[a-zA-Z]{0,2}"')
 
 
 def _highlight_fragment(expr: str) -> str | None:
-    """Return Pygments' own HTML for ``expr``, or ``None`` if it isn't a single line.
-
-    Highlighting the fragment with the same lexer and formatter Sphinx uses is
-    what makes an arbitrary expression matchable in the built page at all:
-    guessing the markup token by token gets escaping and token merging (``()[``
-    lands in one span) wrong.
-    """
+    """Return Pygments' own HTML for ``expr``, or ``None`` if it isn't a single line."""
     from pygments import highlight
     from pygments.formatters import HtmlFormatter
     from pygments.lexers import PythonLexer
@@ -145,11 +109,9 @@ def _highlight_fragment(expr: str) -> str | None:
 
 
 def _expr_pattern_source(expr: str) -> str | None:
-    """Build a regex source matching just ``expr``'s trailing ``.attribute``, in context.
+    """Build a regex source matching just ``expr``'s trailing ``.attribute``.
 
-    The receiver is matched as a fixed-width lookbehind rather than as part of
-    the match, so the receiver's own separately-resolved names (``dataset`` in
-    ``dataset['label_map'].contour_labels``) still get their own links.
+    The receiver goes in a lookbehind, leaving its own names free to be linked.
     """
     fragment = _highlight_fragment(expr)
     if fragment is None:
@@ -167,11 +129,8 @@ class _Candidate:
 
     accessed: str
     candidates: tuple[str, ...]
-    #: Whether this occurrence is a real usage -- a call, an attribute read, or an enum
-    #: member/constant pulled off a class -- rather than a bare mention (a type hint, an
-    #: ``isinstance`` check, a variable just referenced). Gates both the frequency count
-    #: and whether the referencing page appears in the "Used In" list at all; an
-    #: in-source hyperlink is still added for a bare mention regardless.
+    #: A call or attribute read, rather than a bare mention (a type hint, an
+    #: ``isinstance`` check). Gates the "Used In" entry and its count, never the link.
     counts_as_use: bool = True
 
 
@@ -186,14 +145,9 @@ class _CallCandidate:
 
 @dataclass(frozen=True)
 class _ExprCandidate:
-    """A trailing attribute on an expression no dotted name can address, and its candidates.
+    """A trailing attribute on an expression no dotted name can address, e.g. a subscript.
 
-    Recorded from a real call site observed during execution (see
-    :mod:`sphinx_autocodelink._scope_records`), for receivers that name-based
-    resolution has nothing to look up -- a subscript (``dataset['label_map']
-    .contour_labels()``), an index into a call's result, a comprehension
-    variable. ``expr`` is the whole attribute expression's own source; only its
-    trailing attribute gets linked.
+    ``expr`` is the whole attribute expression; only its trailing attribute gets linked.
     """
 
     expr: str
@@ -227,16 +181,11 @@ class _NameCollector(ast.NodeVisitor):
 
     def __init__(self) -> None:
         self.accessed: set[str] = set()
-        #: Dotted names that were the direct target of a call somewhere in the source
-        #: (``pv.Plotter()``, ``pl.add_mesh(...)``) -- feeds ``_Candidate.counts_as_use``.
+        #: Dotted names called directly somewhere in the source (``pl.add_mesh(...)``).
         self.called: set[str] = set()
         #: e.g. ``('pv.Sphere', ('plot',))`` for ``pv.Sphere().plot``.
         self.call_chains: set[tuple[str, tuple[str, ...]]] = set()
-        #: Every call site recorded for each chain -- more than one when the same call
-        #: target/trailing pair is written more than once in a script, e.g. a downloader
-        #: called with different arguments. Feeds overload disambiguation (see
-        #: _resolve_via_overloads): a chain resolves precisely only when every one of its
-        #: call sites agrees on the same overload.
+        #: Every call site of each chain, for overload disambiguation.
         self.call_chain_calls: dict[tuple[str, tuple[str, ...]], list[ast.Call]] = {}
 
     def visit_Name(self, node: ast.Name) -> None:
@@ -361,18 +310,8 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
 def _candidates_for_callable(func: Any) -> list[str]:
     """Return candidate documented names for a callable observed at a real call site.
 
-    Unlike :func:`_candidate_names`, nothing is inferred from the source text
-    here: ``func`` is the object the interpreter actually called, so a
-    ``functools.wraps``-style decorator resolves to the name it wraps, and a
-    receiver that no dotted name could address resolves like any other.
-
-    Builtins are excluded. Observing real calls sees every ``print``, ``len``
-    and ``str.join`` an example makes, none of which name-based resolution
-    would ever have found (they aren't in the namespace); linking all of them
-    to the Python docs is noise, not a gap being closed. So are qualified names
-    carrying a ``<locals>`` or ``<genexpr>`` part -- nothing nested or anonymous
-    is a documented object, and a call instruction can report one (the generator
-    ``any(x for x in y)`` builds) where the source says otherwise.
+    Builtins and anonymous qualified names (``<locals>``, ``<genexpr>``) are excluded:
+    nothing nested or anonymous is a documented object.
     """
     if inspect.isclass(func):
         candidates = _class_candidates(func, [])
@@ -428,13 +367,8 @@ def _resolve_object(accessed: str, namespace: dict[str, Any]) -> Any | None:
 def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
     """Return ``func``'s return type, if its annotation names a resolvable class.
 
-    Checked against ``func``'s own module first, then every module already in
-    ``namespace`` -- covers aliases ``func``'s module only imports under ``TYPE_CHECKING``
-    -- then the builtins, so a plain ``-> str`` still resolves under ``from __future__
-    import annotations`` (where the annotation is a lazy string, never actually looked up
-    by Python itself, rather than the live ``str`` object). A union annotation (``PolyData
-    | str``, common for a ``load: bool`` toggle between a dataset and a bare filename) is
-    tried member by member, in the order written, so the first resolvable member wins.
+    A string annotation is looked up in ``func``'s own module, then every module in
+    ``namespace``, then the builtins. A union resolves to its first resolvable member.
     """
     annotation = getattr(func, '__annotations__', {}).get('return')
     if isinstance(annotation, type):
@@ -456,9 +390,7 @@ def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
     return None
 
 
-#: A call argument that couldn't be resolved to a literal (a variable, an expression) --
-#: distinct from an argument that's simply absent, and equal to nothing a real annotation
-#: could ever name, so it correctly rules out every overload that constrains it.
+#: A call argument that isn't a literal, distinct from one that's absent.
 _UNRESOLVED_ARG = object()
 
 #: Matches a ``Literal[...]`` annotation string, with or without its ``typing.`` prefix.
@@ -480,10 +412,7 @@ def _literal_annotation_values(annotation: str) -> set[Any] | None:
 def _bound_literal_args(call: ast.Call, sig: inspect.Signature) -> dict[str, Any]:
     """Return ``{param name: value}`` for a call's arguments, by binding position to name.
 
-    A non-literal argument (a variable, an expression) still gets an entry -- as
-    :data:`_UNRESOLVED_ARG` -- so a caller can tell "passed but unknown" apart from
-    "not passed at all", rather than silently falling back to the parameter's default
-    for an argument that was, in fact, given some other value.
+    A non-literal argument is entered as :data:`_UNRESOLVED_ARG`, not omitted.
     """
     bound: dict[str, Any] = {}
     positional = [
@@ -512,11 +441,8 @@ def _bound_literal_args(call: ast.Call, sig: inspect.Signature) -> dict[str, Any
 def _overload_matches(overload: Any, args: dict[str, Any]) -> bool:
     """Return whether every ``Literal``-typed parameter of ``overload`` accepts ``args``.
 
-    A parameter with no ``Literal[...]`` annotation never disqualifies a match. One that
-    has such an annotation but wasn't passed falls back to the *overload's own* default --
-    which is how a call that omits an argument still narrows down to the one overload
-    whose default actually applies (e.g. ``download_lucy()`` matching ``Literal[True] =
-    True``, not the ``Literal[False]`` overload, which has no default to fall back to).
+    A parameter not passed falls back to the overload's own default; one with no
+    ``Literal[...]`` annotation never disqualifies a match.
     """
     sig = inspect.signature(overload)
     for name, param in sig.parameters.items():
@@ -537,22 +463,15 @@ def _resolve_via_overloads(
 ) -> type | None:
     """Return the one return type every recorded call site agrees on, via ``@overload``.
 
-    Each call is matched against ``func``'s own ``@overload``-registered signatures by
-    comparing its literal arguments against each overload's ``Literal[...]``-typed
-    parameters. A call that matches more than one overload -- or zero -- can't narrow
-    anything down; different calls landing on different overloads means there's no one
-    type to link the trailing attribute to. Either way the caller falls back to a single
-    best-effort guess instead (see :func:`_call_return_type`). Always ``None`` on Python
-    3.10, which has no :func:`typing.get_overloads`.
+    ``None`` unless every call matches exactly one overload and they all agree, and
+    always ``None`` on Python 3.10, which has no :func:`typing.get_overloads`.
     """
     if get_overloads is None:
         return None
     return _match_overloads(func, calls, namespace)
 
 
-# Only reachable once get_overloads is confirmed to exist (Python 3.11+) -- excluded from
-# coverage rather than tested per-version, since which of this function or the guard above
-# is "the uncovered half" would otherwise flip depending on which Python ran the suite.
+# Reachable only on Python 3.11+, so coverage would flip per-version.
 def _match_overloads(  # pragma: no cover
     func: Any, calls: list[ast.Call], namespace: dict[str, Any]
 ) -> type | None:
@@ -582,10 +501,8 @@ def _call_chain_candidates(
 ) -> list[str]:
     """Return candidate documented names for a call's trailing attribute chain.
 
-    ``calls`` narrows an overloaded callable to the one return type every recorded call
-    site actually resolves to (see :func:`_resolve_via_overloads`); only when that fails
-    -- no ``@overload``s, a non-literal argument, or calls that disagree -- does this fall
-    back to guessing from the plain function's own (possibly unioned) annotation.
+    ``calls`` narrows an overloaded callable; without them the plain return annotation
+    decides.
     """
     func = _resolve_object(call_target, namespace)
     if func is None or not inspect.isroutine(func):
@@ -620,19 +537,9 @@ def exec_with_local_scopes(
 ) -> dict[str, Any]:
     """Execute ``code`` in ``namespace``, and return every local scope seen merged in.
 
-    Traces the execution and captures every one of the script's own function
-    calls' own locals, merging them in underneath ``namespace`` (which still
-    wins on name conflicts). Only frames compiled from ``filename`` are
-    captured. A local name bound in one of the script's own calls can shadow
-    what globals (or a *different* call) bound under the same name, since
-    everything captured is merged into one flat namespace rather than kept
-    scope-by-scope.
-
-    ``code`` is executed in ``namespace`` exactly as a plain ``exec(code,
-    namespace)`` would -- ``namespace`` itself is unaffected by the tracing,
-    only the returned dict differs.
-
-    Uses ``sys.setprofile()`` rather than ``sys.settrace()``.
+    Runs exactly as ``exec(code, namespace)`` would, leaving ``namespace`` itself
+    unchanged. Only frames from ``filename`` are captured; ``namespace`` wins on name
+    conflicts, and one call's locals can shadow another's.
     """
     captured: dict[str, Any] = {}
     old_profile = sys.getprofile()
@@ -654,33 +561,20 @@ def exec_with_local_scopes(
     return merged
 
 
-#: Suggested category (see :func:`record_namespace`) for code recorded from inside an
-#: autodoc-documented object's own docstring (e.g. its Examples section), as opposed to a
-#: hand-written page. Applied automatically when ``state`` is passed and no ``category`` is.
+#: Category for code recorded from inside a documented object's own docstring.
 DEFAULT_DOCSTRING_EXAMPLE_CATEGORY = 'Docstring Examples'
 
-#: Default category (see :func:`record_namespace`) :class:`~sphinx_autocodelink.gallery.
-#: AutoCodeLinkScraper` tags every page it records.
+#: Category :class:`~sphinx_autocodelink.gallery.AutoCodeLinkScraper` tags its pages with.
 DEFAULT_GALLERY_CATEGORY = 'Sphinx Gallery'
 
 
 def is_inside_autodoc_desc(state: RSTState) -> bool:
-    """Return whether ``state``'s directive is nested inside an object description.
-
-    ``state`` is a directive's own ``self.state``, from anywhere in
-    ``docutils.parsers.rst.Directive.run()``.
-    """
+    """Return whether ``state``, a directive's own ``self.state``, is inside a description."""
     return bool(state.document.settings.env.temp_data.get('object'))
 
 
 def _is_inside_desc_node(node: nodes.Node) -> bool:
-    """Return whether ``node`` is nested inside an object description, by doctree ancestry.
-
-    A ``doctree-read`` transform has no directive ``state`` to hand :func:`is_inside_autodoc_desc`
-    -- but by then the whole page's tree, autodoc-documented docstrings included, is fully
-    assembled, so walking up for an ``addnodes.desc`` ancestor is reliable here (unlike at
-    directive-run time, when a docstring's own content is still a detached subtree).
-    """
+    """Return whether ``node`` is nested inside an object description, by doctree ancestry."""
     parent = node.parent
     while parent is not None:
         if isinstance(parent, addnodes.desc):
@@ -692,13 +586,8 @@ def _is_inside_desc_node(node: nodes.Node) -> bool:
 def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
     """Execute and record every bare ``>>>`` doctest block on the page.
 
-    Opt-in via ``autocodelink_doctest_blocks`` -- see :func:`setup` for what this means and
-    the risk it carries before enabling it. Unlike every other recording path in this
-    extension, this one runs code the page's author never explicitly marked as executable
-    (no ``.. autocodelink::``, no host directive calling :func:`record_namespace` itself) --
-    purely because it happens to look like a doctest session. A block that fails to parse or
-    raises while running (elided/pseudo-code, one relying on state from a separate block, one
-    needing external resources) is skipped with a warning, not treated as a build failure.
+    Opt-in via ``autocodelink_doctest_blocks``. A block that fails to parse or raises is
+    skipped with a warning.
     """
     env = app.env
     if not getattr(app.config, 'autocodelink_doctest_blocks', False):
@@ -719,8 +608,6 @@ def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
             )
             continue
         try:
-            # Arbitrary code the page's author wrote, not this extension's own -- any
-            # failure here must be skipped, never allowed to fail the build.
             namespace = exec_with_local_scopes(compiled, {}, filename)
         except Exception as error:  # noqa: BLE001
             _logger.warning(
@@ -748,13 +635,9 @@ def record_namespace(
 ) -> None:
     """Record candidate documented names for every identifier in ``source``.
 
-    ``category`` optionally tags where this recording came from (e.g. ``'Sphinx
-    Gallery'``), for grouping in ``.. autocodelink-index::`` output. Untagged pages
-    display under a generic "Documentation" bucket when grouped.
-
-    ``state`` (the calling directive's own ``self.state``) sets ``category`` to
-    :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` when it isn't already set and
-    :func:`is_inside_autodoc_desc` is true for it.
+    ``category`` tags this page for grouping in ``.. autocodelink-index::`` output.
+    ``state``, the calling directive's own, defaults it to
+    :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` inside an object description.
     """
     if not category and state is not None and is_inside_autodoc_desc(state):
         category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
@@ -782,12 +665,8 @@ def record_namespace_to_disk(
 ) -> None:
     """Like :func:`record_namespace`, but appended to a file under ``directory``.
 
-    ``extra`` is appended as-is, for records resolved somewhere other than
-    ``source`` against ``namespace`` -- e.g. by tracing the example's own
-    helper-function scopes (see :mod:`sphinx_autocodelink._scope_records`).
-
-    For recording from a process Sphinx's own ``env-merge-info`` never sees
-    -- e.g. Sphinx-Gallery's own parallel (joblib) example workers.
+    For a process Sphinx's own ``env-merge-info`` never sees. ``extra`` records are
+    appended as-is, having been resolved elsewhere.
     """
     records = [*_records_for(source, namespace), *(extra or ())]
     if not records:
@@ -892,8 +771,7 @@ def _purge_doc(app: Sphinx, env: BuildEnvironment, docname: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: once the whole site's objects are known, match candidates against
-# the real inventory and rewrite the already-built HTML.
+# Phase 2: match candidates against the inventory and rewrite the built HTML.
 # ---------------------------------------------------------------------------
 
 
@@ -908,11 +786,8 @@ def _local_inventory(app: Sphinx) -> dict[str, tuple[str, str]]:
 def _aliased_names(app: Sphinx) -> set[str]:
     """Return every name registered only as a ``:canonical:`` cross-reference target.
 
-    Sphinx auto-adds one of these -- pointing at the same page -- for an object documented
-    under a shorter public alias than the module it's actually defined in (autodoc sets
-    ``:canonical:`` whenever the two differ). The alias is what the object is actually
-    documented under, and what its own docstring's backreferences are keyed by, so an
-    aliased name should lose to a non-aliased one resolving to the same target.
+    These lose to a non-aliased name resolving to the same target, which is the one an
+    object's own backreferences are keyed by.
     """
     return {name for name, entry in app.env.domains['py'].objects.items() if entry.aliased}
 
@@ -939,13 +814,7 @@ def _resolve_link(
 ) -> tuple[str, str] | None:
     """Return the first candidate's ``(name, url)``, local names taking priority, or ``None``.
 
-    A class registers under more than one name in Sphinx's own object inventory -- e.g. its
-    full defining-module path alongside its short public name -- both pointing at the exact
-    same page and anchor. If the first match found is one of ``aliased`` (Sphinx's own
-    ``:canonical:`` cross-reference, not the name the object is actually documented under),
-    prefers a later candidate resolving to that same target that isn't -- an aliased name
-    would silently fail to match how the object's own docstring looks up its
-    backreferences, which is always keyed by the non-aliased name.
+    A match in ``aliased`` loses to a later candidate resolving to the same target.
     """
     for i, name in enumerate(candidates):
         if name in local:
@@ -984,14 +853,8 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
     aliased = frozenset(_aliased_names(app))
     external = _intersphinx_inventory(app)
     backrefs: dict[str, set[str]] = {}
-    #: Per resolved target name, how many times each referencing page's own recorded
-    #: source actually used it -- feeds ``autocodelink_sort = 'frequency'``. A page can
-    #: accumulate more than one record for the same target (e.g. Sphinx-Gallery records
-    #: one block per code cell, and more than one cell in the same example can reference
-    #: it), which the dedup below deliberately collapses for link-embedding purposes but
-    #: not for this count -- nor does a page reaching the same target through more than
-    #: one *accessed* spelling (``pkg.thing`` and, after `ref = pkg`, ``ref.thing``), so
-    #: this accumulates rather than overwrites.
+    #: Per target name, how many times each page used it. Accumulates across records,
+    #: unlike the link-embedding dedup below.
     usage_counts: dict[str, Counter[str]] = {}
 
     for docname, candidates in records.items():
@@ -1065,10 +928,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                 if resolved is not None:
                     name, link = resolved
                     resolved_names[candidate.accessed] = link
-                    # In-source hyperlinking (above) still applies to a bare mention --
-                    # a type hint or an isinstance check is still worth linking. It just
-                    # isn't a "Used In" entry: only list this page, and only count it
-                    # towards `autocodelink_sort = 'frequency'`, once it's actually used.
+                    # A bare mention is linked above, but isn't a "Used In" entry.
                     count = name_occurrences[candidate.accessed]
                     if count:
                         backrefs.setdefault(name, set()).add(docname)
@@ -1146,25 +1006,18 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         )
 
 
-#: Matches one ``.. autocodelink-index::`` placeholder, ``data-name`` empty for the full index.
-#: Placeholder options travel as one JSON blob (rather than growing positional data-*
-#: attributes indefinitely): {"name": str, "hide_empty": bool, "group": "auto"|"always"|"never",
-#: "titles": bool}.
+#: Matches one ``.. autocodelink-index::`` placeholder and its JSON options blob.
 _INDEX_PLACEHOLDER_RE = re.compile(
     r'<div class="sphinx-autocodelink-index" data-opts="([^"]*)"></div>'
 )
 
-#: Matches a ``:label:``-generated section (title + one placeholder), for the ``:hide-empty:``
-#: case: removed as a whole -- title included -- rather than just its placeholder, so an
-#: auto-injected "Used In" heading never sits over nothing. Assumes no directive nests
-#: another section inside it, which none of ours do.
+#: Matches a ``:label:``-generated section, removed whole by ``:hide-empty:``.
 _BACKREFS_SECTION_RE = re.compile(
     r'<section\b[^>]*\bclass="[^"]*sphinx-autocodelink-backrefs[^"]*"[^>]*>.*?</section>',
     re.DOTALL,
 )
 
-#: Pulls a section's own ``id`` out of its opening tag, so a dropped ``:hide-empty:`` section
-#: can also be found (and removed) in the page's separately-rendered in-page nav.
+#: Pulls a section's ``id`` out of its opening tag, to strip its in-page nav link too.
 _SECTION_ID_RE = re.compile(r'\bid="([^"]*)"')
 
 
@@ -1193,8 +1046,7 @@ _COLLAPSE_THRESHOLD = 8
 _COLLAPSE_VISIBLE = 5
 
 
-#: Above this many hidden entries, the overflow list lays out in columns instead of one
-#: long single-file scroll -- skimmable rather than a wall of links to nowhere.
+#: Above this many hidden entries, the overflow list lays out in columns.
 _COLUMN_LAYOUT_THRESHOLD = 24
 
 
@@ -1207,32 +1059,10 @@ def _render_ref_list(
     categories: dict[str, str] | None = None,
     usage_counts: dict[str, int] | None = None,
 ) -> str:
-    """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``, sorted by display text.
+    """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``.
 
-    An entry recorded under :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` -- itself another
-    documented object's own page -- renders like a real ``:class:``/``:func:``/etc.
-    cross-reference would. One under :data:`DEFAULT_GALLERY_CATEGORY` renders like a real
-    ``:ref:`` instead, since that's exactly what it is: a specific, structured page with a
-    real anchor, not an object. Anything else (a hand-written page, an uncategorized or
-    custom-tagged one) is a plain page link -- there's no similarly specific real target to
-    point at, just "some page, somewhere in the docs".
-
-    Sorted by display text (``autocodelink_sort``'s default, ``'alphabetical'``), or by
-    ``usage_counts`` descending -- how many times each referencing page's own recorded
-    source actually used this target -- when it's ``'frequency'`` instead, ties broken
-    alphabetically. ``usage_counts`` missing a ref (or not supplied at all) counts as 0,
-    same as an unresolvable entry sinking to the bottom of its tied group rather than
-    erroring. With ``autocodelink_show_usage_count`` on -- independent of sort mode --
-    each entry also shows its own count in plain text after the link (e.g. "(3 uses)").
-
-    Lists longer than ``_COLLAPSE_THRESHOLD`` show only the first ``_COLLAPSE_VISIBLE`` entries,
-    with the rest tucked behind a ``<details>`` toggle rendered as one more ``<li>`` -- so it
-    picks up the same indentation and spacing as its sibling entries for free, from whatever
-    list styling the theme already applies, rather than trying to replicate it. Frequency order
-    means the collapsed-away entries are always the least-used ones, not an alphabetical cutoff.
-    With ``autocodelink_gallery_cards`` enabled, :data:`DEFAULT_GALLERY_CATEGORY` entries render
-    as a thumbnail carousel instead, at any length -- see
-    :func:`sphinx_autocodelink._gallery_cards.render_gallery_carousel`.
+    Ordered by ``autocodelink_sort``, styled by each ref's category, and collapsed
+    behind a ``<details>`` toggle past :data:`_COLLAPSE_THRESHOLD` entries.
     """
     categories = categories or {}
     usage_counts = usage_counts or {}
@@ -1585,13 +1415,7 @@ def _inject_backref_index(
 
 
 def _register_autodoc_hook(app: Sphinx) -> None:
-    """Connect the autodoc backrefs hook once every extension's own events are registered.
-
-    ``builder-inited`` fires after every extension's ``setup()`` has run, so this is the
-    first point ``autodoc-process-docstring`` reliably exists if autodoc is used at all --
-    regardless of whether autodoc (or numpydoc, which depends on it) is listed before or
-    after this extension in ``extensions``.
-    """
+    """Connect the autodoc backrefs hook, once autodoc's own events are registered."""
     if not getattr(app.config, 'autocodelink_autodoc_backrefs', False):
         return
     if 'autodoc-process-docstring' not in app.events.events:
@@ -1602,12 +1426,8 @@ def _register_autodoc_hook(app: Sphinx) -> None:
 def _wire_gallery_tracing(app: Sphinx, config: Any) -> None:
     """Add :func:`~sphinx_autocodelink.gallery.reset_autocodelink` to ``reset_modules``.
 
-    Tracing an example has to be set up *before* it runs, and Sphinx-Gallery's
-    ``reset_modules`` is its only hook that fires there -- but a scraper is the
-    only thing a user configures, so the two halves are joined here rather than
-    asked for twice. Runs at ``config-inited`` ahead of Sphinx-Gallery's own
-    priority-10 handler, which is what reads ``reset_modules`` into the
-    ``gallery_conf`` that reaches parallel workers.
+    Runs ahead of Sphinx-Gallery's own ``config-inited`` handler, which is what reads
+    ``reset_modules`` into the conf that reaches parallel workers.
     """
     from sphinx_autocodelink.gallery import RESET_AUTOCODELINK
     from sphinx_autocodelink.gallery import wants_tracing
@@ -1618,9 +1438,7 @@ def _wire_gallery_tracing(app: Sphinx, config: Any) -> None:
     resets = tuple(gallery_conf.get('reset_modules', ('matplotlib', 'seaborn')))
     if RESET_AUTOCODELINK in resets:
         return
-    # Added by dotted name, which Sphinx-Gallery imports for itself: a bare function
-    # here would make the whole `sphinx_gallery_conf` unpicklable for Sphinx's own
-    # config cache, for a hook the user never asked for by hand.
+    # By dotted name, which Sphinx-Gallery imports itself, keeping the conf picklable.
     gallery_conf['reset_modules'] = (*resets, RESET_AUTOCODELINK)
     app.connect('build-finished', _stop_gallery_tracing)
     if gallery_conf.get('reset_modules_order', 'before') == 'after':
@@ -1638,72 +1456,16 @@ def _stop_gallery_tracing(app: Sphinx, exception: Exception | None) -> None:
     reset_autocodelink({}, None, 'after')
 
 
-#: Default value of the ``autocodelink_records_dir`` config value, and of
-#: :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s ``records_dir`` -- matching
-#: defaults mean disk-based recording works without configuring either explicitly.
+#: Default for both ``autocodelink_records_dir`` and ``AutoCodeLinkScraper.records_dir``.
 DEFAULT_RECORDS_DIR = '_autocodelink_records'
 
 
 def setup(app: Sphinx) -> dict[str, bool]:
     """Wire up dynamic autolinking.
 
-    Registers the ``.. autocodelink::`` and ``.. autocodelink-index::``
-    directives and the event hooks that resolve and embed links --
-    everything needed to use this extension on its own. A consumer that
-    already executes code for its own purposes can instead (or additionally)
-    call :func:`record_namespace` directly and call this from its own
-    ``setup(app)``.
-
-    Each code source is opt-in by use, not by configuration: the
-    ``.. autocodelink::`` directive only affects blocks that use it, and
-    :class:`sphinx_autocodelink.gallery.AutoCodeLinkScraper` only records
-    when added to a ``sphinx_gallery_conf['image_scrapers']``.
-
-    ``autocodelink_autodoc_backrefs`` (default ``False``) appends a "Used
-    in" backreferences index to every autodoc-documented object's own
-    docstring, via ``autodoc-process-docstring``. Objects with no
-    references get nothing appended, not an empty "No references found."
-
-    ``autocodelink_sort`` (default ``'alphabetical'``) chooses how each rendered list of
-    referencing pages is ordered. ``'frequency'`` instead ranks by how many times each
-    referencing page's own recorded source actually used the target -- most-used first,
-    ties broken alphabetically -- so the "N more" collapse (see :func:`_render_ref_list`)
-    tucks away the least-used pages rather than an alphabetical tail.
-
-    ``autocodelink_gallery_cards`` (default ``False``) renders
-    :data:`DEFAULT_GALLERY_CATEGORY` entries as a carousel of Sphinx-Gallery-style
-    thumbnail cards -- the same thumbnail, title, and hover-tooltip intro
-    Sphinx-Gallery's own gallery pages use -- instead of a plain link list, at any
-    length. Requires Sphinx-Gallery and sphinx-design; see
-    :mod:`sphinx_autocodelink._gallery_cards`.
-
-    ``autocodelink_category_labels`` (default ``{}``) renames a recorded
-    category's own display label in grouped ``.. autocodelink-index::``
-    output, e.g. ``{'Sphinx Gallery': 'Gallery Examples'}`` -- without
-    changing the category string itself, which is what ``:category:``,
-    :class:`~sphinx_autocodelink.gallery.AutoCodeLinkScraper`'s own
-    ``category``, and :func:`record_namespace` calls are actually matched
-    and grouped by. A category with no entry displays under its own name
-    unchanged; that includes ``'Documentation'``, the default for anything
-    recorded with no category at all.
-
-    ``autocodelink_doctest_blocks`` (default ``False``) is the one exception to "opt-in by
-    use": once enabled, *every* bare ``>>>`` doctest block anywhere in the docs -- in a
-    docstring's Examples section, in a hand-written page, anywhere -- is executed and its
-    identifiers recorded, with no ``.. autocodelink::`` needed on any of them individually.
-    This is the only way this extension ever executes code on its own initiative, rather
-    than observing code something else already executes for its own purposes (a host
-    directive, Sphinx-Gallery). Understand what that means before enabling it:
-
-    - It runs code the page's author never marked as runnable, purely because it looks
-      like a doctest session -- including in third-party docstrings pulled in via
-      ``autodoc`` from dependencies you may not have fully read.
-    - A failing block (elided/pseudo-code, one relying on a variable from a separate
-      block, one needing a resource that isn't there at build time) is skipped with a
-      warning rather than failing the build, but it still *ran* first, with whatever
-      side effects that entailed, before the failure surfaced.
-    - Each block executes in its own fresh namespace -- a later block cannot see a name
-      bound by an earlier one, even within the same docstring's Examples section.
+    Registers the ``.. autocodelink::`` and ``.. autocodelink-index::`` directives and
+    the event hooks that resolve and embed links. See the README for every
+    ``autocodelink_*`` config value.
     """
     from sphinx_autocodelink._directive import AutoCodeLink
     from sphinx_autocodelink._directive import AutoCodeLinkIndex
@@ -1712,10 +1474,7 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.connect('config-inited', _wire_gallery_tracing, priority=5)
     app.connect('env-merge-info', _merge_records)
     app.connect('env-purge-doc', _purge_doc)
-    # Priority > 500 (Sphinx's default): run after other build-finished handlers, e.g.
-    # Sphinx-Gallery's own `reference_url`-driven link embedding, which does not check
-    # for spans already inside an anchor -- running after it lets our own such check
-    # (which does) skip whatever it already wrapped, instead of nesting inside it.
+    # Priority > 500 so other extensions' embedding runs first and ours can skip it.
     app.connect('build-finished', _embed_links, priority=900)
     app.connect('builder-inited', _register_autodoc_hook)
     app.connect('doctree-read', _record_bare_doctest_blocks)

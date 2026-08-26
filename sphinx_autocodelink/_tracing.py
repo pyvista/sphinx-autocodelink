@@ -1,19 +1,8 @@
-"""Low-overhead, scope-aware execution tracing built on :mod:`sys.monitoring`.
+"""Scope-aware execution tracing built on :mod:`sys.monitoring` (Python 3.12+).
 
-Sphinx-Gallery owns the ``exec()`` of its example scripts, so
-:func:`sphinx_autocodelink.exec_with_local_scopes` can't be used there. This
-traces that execution from the outside instead, and reports two things back:
-every scope (function frame) the example's own code ran in, and every call the
-example's own code made, with the real callable that was invoked.
-
-Cost is the reason this is built on :mod:`sys.monitoring` (Python 3.12+) rather
-than ``sys.settrace``/``sys.setprofile``: every event this registers is
-``DISABLE``-d the first time it fires for a given code location, so a whole
-gallery build pays one Python-level callback per distinct code location that
-ever runs, not one per call. Nothing observed is retained -- callbacks resolve
-what they need to plain strings and drop every reference before returning --
-which is what keeps traced example objects (plotters, meshes, anything holding
-a native resource) from outliving the example that created them.
+Reports every scope a traced file's code ran in, and every call it made, with the
+callable actually invoked. Each event is ``DISABLE``-d once it has fired for a code
+location, so tracing costs one callback per location rather than one per call.
 """
 
 from __future__ import annotations
@@ -45,16 +34,10 @@ def monitoring_available() -> bool:
 class ScopeTracer:
     """Report the scopes entered, and the calls made, by one traced source file.
 
-    ``on_scope(code, frame)`` is called once per code object of the traced file,
-    when a frame running it returns. ``on_call(code, offset,
-    func, frame)`` is called once per call site in the traced file, with the
-    real callable invoked there and the calling frame. Neither the frame nor
-    the callable may be retained past the callback.
-
-    Anything raised by a callback propagates into the code being traced, so
-    every callback here is wrapped: the first failure reports through
-    ``on_error(exception)`` and permanently silences this tracer for the rest
-    of the process.
+    ``on_scope(code, frame)`` fires once per code object, when a frame running it
+    returns; ``on_call(code, offset, func, frame)`` once per call site. Neither the
+    frame nor the callable may be retained past the callback. The first callback to
+    raise reports through ``on_error`` and silences this tracer for good.
     """
 
     def __init__(
@@ -82,9 +65,7 @@ class ScopeTracer:
     def start(self, basename: str) -> bool:
         """Begin tracing the next file whose basename is ``basename``; return success.
 
-        Sphinx-Gallery's own ``reset_modules`` hook only reports an example's
-        basename, so the full path is pinned from the first code object seen
-        matching it, and everything else is filtered out from then on.
+        The full path is pinned from the first code object seen matching it.
         """
         if self._broken or not monitoring_available():
             return False
@@ -119,10 +100,7 @@ class ScopeTracer:
     def close(self) -> None:
         """Stop tracing and release the ``sys.monitoring`` tool id this claimed.
 
-        A build's tracer holds its tool id for the whole build -- the DISABLE-d
-        state that makes tracing cheap lives with the id, and re-claiming it per
-        example would throw that away. Only a caller that builds more than one
-        tracer in a process (i.e. a test) needs this.
+        Only needed by a caller that builds more than one tracer in a process.
         """
         self.stop()
         if self._tool_id is not None:
@@ -161,18 +139,13 @@ class ScopeTracer:
         return True
 
     def _start_event(self, code: CodeType, instruction_offset: int) -> Any:
-        """Instrument a traced file's code object on first entry; ignore everything else.
-
-        ``DISABLE`` either way: a foreign code object never costs a second
-        callback, and a traced one has its per-code events installed already.
-        """
+        """Instrument a traced file's code object on first entry; ignore everything else."""
         disable = sys.monitoring.DISABLE
         try:
             if not self._ready() or not self._is_traced(code):
                 return disable
             events = sys.monitoring.events
-            # PY_RETURN only: PY_UNWIND isn't a valid local event, so a scope left by
-            # a raised exception simply goes unrecorded, like the failing block itself.
+            # PY_UNWIND isn't a valid local event, so a scope left by a raise is unrecorded.
             sys.monitoring.set_local_events(self._tool_id, code, events.CALL | events.PY_RETURN)
             self._instrumented.append(code)
         except Exception as error:  # noqa: BLE001
@@ -180,12 +153,7 @@ class ScopeTracer:
         return disable
 
     def _ready(self) -> bool:
-        """Return whether a callback should do any work right now.
-
-        Resolving what an event reports runs arbitrary attribute access on the
-        traced objects, which can call back into traced code; the guard keeps
-        that from re-entering a callback that's already running.
-        """
+        """Return whether a callback should do any work, guarding against re-entry."""
         return not self._broken and self._basename is not None and not self._in_callback
 
     def _return_event(self, code: CodeType, instruction_offset: int, retval: Any) -> Any:

@@ -21,15 +21,10 @@ if TYPE_CHECKING:
 
 
 class AutoCodeLink(Directive):
-    """Execute the content and record its identifiers for dynamic linking.
+    """Execute the content and render it as a linked, syntax-highlighted code block.
 
-    Renders the content as a syntax-highlighted code block; produces no
-    figures or other output. Doctest-style (``>>>``) content executes with
-    prompts stripped; plain code executes as-is.
-
-    :category: tags this page's records for grouping in
-        ``.. autocodelink-index::`` output (e.g. ``:category: Tutorials``).
-        Untagged pages display under a generic "Documentation" bucket when grouped.
+    Doctest-style (``>>>``) content executes with prompts stripped. ``:category:``
+    tags this page's records for grouping in ``.. autocodelink-index::`` output.
     """
 
     has_content = True
@@ -68,28 +63,9 @@ def _group_choice(arg: str) -> str:
 class AutoCodeLinkIndex(Directive):
     """A backreferences index: every linked name and the pages that use it.
 
-    With no argument, lists every resolved name site-wide. With one
-    argument -- a documented dotted name, e.g. ``pkg.thing`` -- lists just
-    the pages that reference that name. Actually filled in at
-    ``build-finished``, once every page's links are known.
-
-    :label: wraps the list in a real section with this title, instead of
-        rendering inline -- so e.g. a Sphinx setup that hoists docstring
-        sections to page level for its own "on this page" navigation picks
-        this one up identically. :hide-empty: then omits the whole
-        section -- title included -- instead of "No references found."
-        when there's nothing to show; only meaningful alongside :label:.
-
-    :group: ``auto`` (default), ``always``, or ``never`` -- whether
-        referencing pages are grouped by their recorded category (e.g.
-        "Sphinx Gallery" vs "Docstring examples"). ``auto`` groups only
-        when more than one category is actually present for a given
-        entry; a single category (or none at all) renders as today's
-        flat list either way.
-
-    :no-titles: shows each referencing page's own docname instead of its
-        title. Titles are on by default, read straight from Sphinx's own
-        tracked document titles.
+    Takes an optional documented dotted name to index just that one. Options are
+    ``:label:``, ``:hide-empty:``, ``:group:`` and ``:no-titles:``; see the README.
+    Filled in at ``build-finished``, once every page's links are known.
     """
 
     has_content = False
