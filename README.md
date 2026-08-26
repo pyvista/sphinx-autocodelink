@@ -95,7 +95,7 @@ gallery pages -- then there's nothing to fall back to it for.
 ### Bare doctest blocks (opt-in, site-wide)
 
 The directive, the Sphinx-Gallery scraper, and library use (below) are all opt-in *by use*: only
-the specific blocks that name them get executed. `autocodelink_autodoc_backrefs` is the one
+the specific blocks that name them get executed. `autocodelink_doctest_blocks` is the one
 exception -- set it and *every* bare `>>>` doctest block anywhere in the docs (a docstring's
 Examples section, a hand-written page, anywhere) is executed and its identifiers recorded, with no
 `.. autocodelink::` needed on any of them individually:
@@ -167,7 +167,9 @@ an object's own description (e.g. a docstring's Examples section, rendered throu
 domain directive like `.. py:function::`), in which case it's tagged `'Docstring Examples'` instead.
 Detected automatically when `record_namespace()`/`.. autocodelink::` are given the calling
 directive's own `state`; not available to `AutoCodeLinkScraper`, since Sphinx-Gallery examples don't
-run inside any object's own description in the first place.
+run inside any object's own description in the first place. `autocodelink_doctest_blocks` gets the
+same automatic split too -- by the built doctree's own structure instead of directive `state`, since
+by the time it runs (`doctree-read`) there's no directive call to hand one.
 
 Set `autocodelink_category_labels` to rename categories' *displayed* group headings, without
 changing the category strings themselves (what `:group:` actually groups by) -- e.g. to drop
@@ -179,6 +181,20 @@ autocodelink_category_labels = {
     'Sphinx Gallery': 'Gallery Examples',
     'Documentation': 'API Reference',
 }
+```
+
+Groups render alphabetically by their displayed label by default. Set `autocodelink_category_order`
+to override that with an explicit order instead -- list every category string *your project actually
+uses* (not the renamed label); which ones that is depends on usage, not just the three built-in
+categories above -- e.g. a project that never calls `.. autocodelink::`/`record_namespace()` outside
+a docstring only ever sees `'Sphinx Gallery'` and `'Docstring Examples'`, never `'Documentation'`, and
+a custom `category=` adds one of its own. A category present but left off the list still renders,
+sorted alphabetically after the listed ones, with a build warning naming it so a config that's gone
+stale gets caught rather than silently misordering things. Pinning gallery examples last, as in
+PyVista's own docs:
+
+```python
+autocodelink_category_order = ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
 ```
 
 **Long lists.** Each rendered list (a whole flat list, or one category's group) shows at most 8

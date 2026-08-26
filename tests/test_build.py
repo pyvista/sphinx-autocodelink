@@ -291,6 +291,39 @@ def test_autocodelink_category_labels_renames_group_headings(tmp_path):
     assert labels == ['API Docs', 'API Examples', 'Gallery Examples']
 
 
+def test_autocodelink_category_order_overrides_alphabetical(tmp_path):
+    # Reverse of alphabetical order -- proves the explicit order actually took effect.
+    outdir, _ = _build(
+        tmp_path,
+        confoverrides={
+            'autocodelink_category_order': [
+                'Sphinx Gallery',
+                'Documentation',
+                'Docstring Examples',
+            ]
+        },
+    )
+    refs = (outdir / 'refs.html').read_text()
+    grouped = _block_after(refs, 'since 3 categories apply):')
+    labels = re.findall(
+        r'<p class="sphinx-autocodelink-index-group-label"><strong>([^<]*)</strong></p>', grouped
+    )
+    assert labels == ['Sphinx Gallery', 'Documentation', 'Docstring Examples']
+
+
+def test_autocodelink_category_order_partial_list_sorts_the_rest_after(tmp_path):
+    outdir, _ = _build(
+        tmp_path,
+        confoverrides={'autocodelink_category_order': ['Docstring Examples', 'Documentation']},
+    )
+    refs = (outdir / 'refs.html').read_text()
+    grouped = _block_after(refs, 'since 3 categories apply):')
+    labels = re.findall(
+        r'<p class="sphinx-autocodelink-index-group-label"><strong>([^<]*)</strong></p>', grouped
+    )
+    assert labels == ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
+
+
 def test_autodoc_backrefs(tmp_path):
     outdir, _ = _build(tmp_path)
     api = (outdir / 'api.html').read_text()
