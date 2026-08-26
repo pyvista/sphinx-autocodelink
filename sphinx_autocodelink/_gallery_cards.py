@@ -29,8 +29,9 @@ from sphinx.util.osutil import relative_uri
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
-#: Thumbnails bundled into each carousel card -- large screens show all four in one
-#: row, smaller screens wrap them 2x2 (see the row-cols classes in ``_card_html``).
+#: Thumbnails bundled into each carousel card -- medium screens and up show all four
+#: in one row, only truly narrow (mobile-width) screens wrap them 2x2 (see the
+#: row-cols classes in ``_card_html``).
 _THUMBNAILS_PER_CARD = 4
 
 #: Sphinx-Gallery's own intro truncation length (sphinx_gallery.gen_rst docstring).
@@ -56,6 +57,18 @@ _INTRO_MAX_CHARS = 95
 #: to `auto` -- its unwrapped content width -- rather than the container's, so a long
 #: title can overflow past both edges of its own card instead of wrapping to fit it.
 #:
+#: sphinx-design's own grid gutters are horizontal-only (bootstrap-style: `.sd-row`
+#: gets a negative side margin, `.sd-col` a matching positive side padding, `row-gap`
+#: is never set) and layered under an extra `.sd-container-fluid` side padding on top
+#: of that -- so by default the edge-to-thumbnail gap ends up wider than, and
+#: different from, the between-thumbnail gap, while there's no vertical gap between
+#: wrapped rows at all. Zeroing the container's own padding and giving the row a
+#: matching negative margin/positive column padding pair collapses the outer edge
+#: back down to just the card body's own padding (equal on all four sides by
+#: default), and setting `column-gap: 0` (the horizontal gap comes from the
+#: margin/padding pair, not this) plus an explicit `row-gap` makes the vertical gap
+#: between wrapped rows match that same value.
+#:
 #: The last block fixes a layout shift: sphinx-design's own carousel CSS is
 #: `overflow-x: hidden`, switching to `overflow-x: auto` only on `:hover`/`:focus` --
 #: so a non-overlay scrollbar (its track occupies real layout space, unlike macOS's
@@ -76,6 +89,10 @@ _CAROUSEL_STYLE = (
     'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
     '.sphinx-autocodelink-gallery-carousel .sphinx-autocodelink-usage-count{'
     'height:1.2em;font-size:0.85em;opacity:0.75}'
+    '.sphinx-autocodelink-gallery-carousel .sd-container-fluid{padding:0}'
+    '.sphinx-autocodelink-gallery-carousel .sd-row{'
+    'margin:0 -8px;column-gap:0;row-gap:16px}'
+    '.sphinx-autocodelink-gallery-carousel .sd-col{padding:0 8px}'
     '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel{'
     'overflow-x:scroll!important;scrollbar-color:transparent transparent}'
     '.sphinx-autocodelink-gallery-carousel.sd-cards-carousel::-webkit-scrollbar{height:8px}'
@@ -201,7 +218,7 @@ def _card_html(thumbnails: list[str]) -> str:
         '<div class="sd-card-body">'
         '<div class="sd-container-fluid sd-sphinx-override">'
         '<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 '
-        f'sd-row-cols-md-2 sd-row-cols-lg-4">{items}</div>'
+        f'sd-row-cols-md-4 sd-row-cols-lg-4">{items}</div>'
         '</div></div></div>'
     )
 
