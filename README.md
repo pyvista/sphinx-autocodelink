@@ -124,7 +124,7 @@ gallery pages -- then there's nothing to fall back to it for.
 ### Bare doctest blocks (opt-in, site-wide)
 
 The directive, the Sphinx-Gallery scraper, and library use (below) are all opt-in *by use*: only
-the specific blocks that name them get executed. `autocodelink_autodoc_backrefs` is the one
+the specific blocks that name them get executed. `autocodelink_doctest_blocks` is the one
 exception -- set it and *every* bare `>>>` doctest block anywhere in the docs (a docstring's
 Examples section, a hand-written page, anywhere) is executed and its identifiers recorded, with no
 `.. autocodelink::` needed on any of them individually:
@@ -174,6 +174,11 @@ included, when there's nothing to show, instead of printing "No references found
 Referencing pages show their real title by default (read straight from Sphinx's own tracked
 document titles), not their docname. Add `:no-titles:` to show docnames instead.
 
+A page only appears in this list if it actually *uses* the target: a call, an attribute read
+(a `@property`, or a class member like an enum entry), not just a bare mention (a type hint, an
+`isinstance` check, a variable simply referenced) -- though a bare mention still gets its own
+in-source hyperlink either way.
+
 Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used In"
 section -- to every autodoc-documented object's own docstring automatically, via
 `autodoc-process-docstring`. Off by default; requires `sphinx.ext.autodoc` (directly, or via
@@ -191,7 +196,9 @@ an object's own description (e.g. a docstring's Examples section, rendered throu
 domain directive like `.. py:function::`), in which case it's tagged `'Docstring Examples'` instead.
 Detected automatically when `record_namespace()`/`.. autocodelink::` are given the calling
 directive's own `state`; not available to `AutoCodeLinkScraper`, since Sphinx-Gallery examples don't
-run inside any object's own description in the first place.
+run inside any object's own description in the first place. `autocodelink_doctest_blocks` gets the
+same automatic split too -- by the built doctree's own structure instead of directive `state`, since
+by the time it runs (`doctree-read`) there's no directive call to hand one.
 
 Set `autocodelink_category_labels` to rename categories' *displayed* group headings, without
 changing the category strings themselves (what `:group:` actually groups by) -- e.g. to drop
@@ -205,6 +212,20 @@ autocodelink_category_labels = {
 }
 ```
 
+Groups render alphabetically by their displayed label by default. Set `autocodelink_category_order`
+to override that with an explicit order instead -- list every category string *your project actually
+uses* (not the renamed label); which ones that is depends on usage, not just the three built-in
+categories above -- e.g. a project that never calls `.. autocodelink::`/`record_namespace()` outside
+a docstring only ever sees `'Sphinx Gallery'` and `'Docstring Examples'`, never `'Documentation'`, and
+a custom `category=` adds one of its own. A category present but left off the list still renders,
+sorted alphabetically after the listed ones, with a build warning naming it so a config that's gone
+stale gets caught rather than silently misordering things. Pinning gallery examples last, as in
+PyVista's own docs:
+
+```python
+autocodelink_category_order = ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
+```
+
 **Long lists.** Each rendered list (a whole flat list, or one category's group) shows at most 8
 entries; past that it shows the first 5 and tucks the rest behind a `<details>` "N more" toggle, so
 a heavily-used name's index entry doesn't turn into a wall of links.
@@ -213,12 +234,10 @@ a heavily-used name's index entry doesn't turn into a wall of links.
 
 - `'alphabetical'` (the default) -- by display text, same as always.
 - `'frequency'` -- by how many times each referencing page's own recorded source actually used
-  the target, most-used first, ties broken alphabetically. "Used" means a call site or a live
-  `@property` read (`pkg.thing()`, `mesh.points`) -- a bare mention with neither, like a type hint
-  or an `isinstance` check, doesn't count. A page referencing the target more than once (through
-  more than one code block, or more than one spelling of the same object) counts every one of
-  them, not just whether it referenced it at all -- so the "N more" collapse above tucks away the
-  least-used pages, not an alphabetical tail.
+  the target (see "used" above), most-used first, ties broken alphabetically. A page using the
+  target more than once (through more than one code block, or more than one spelling of the same
+  object) counts every one of them -- so the "N more" collapse above tucks away the least-used
+  pages, not an alphabetical tail.
 
 ```python
 autocodelink_sort = 'frequency'
