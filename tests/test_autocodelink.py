@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections import namedtuple
+import dataclasses
 from enum import Enum
 import functools
 import inspect
@@ -782,6 +783,31 @@ def test_records_for_bare_submodule_reference_does_not_count_as_use():
     records = autolink._records_for('print(parent.sub)\n', {'parent': parent})
     (record,) = [r for r in records if r.accessed == 'parent.sub']
     assert record.counts_as_use is False
+
+
+@dataclasses.dataclass
+class _Point:
+    """A minimal dataclass, for counts_as_use tests covering dataclass fields."""
+
+    x: int
+    y: int = 0
+
+    @property
+    def magnitude(self) -> float:
+        """Return the distance from the origin."""
+        return (self.x**2 + self.y**2) ** 0.5
+
+
+def test_records_for_dataclass_field_counts_as_use():
+    records = autolink._records_for('p.x\n', {'p': _Point(1, 2)})
+    (record,) = [r for r in records if r.accessed == 'p.x']
+    assert record.counts_as_use is True
+
+
+def test_records_for_dataclass_property_counts_as_use():
+    records = autolink._records_for('p.magnitude\n', {'p': _Point(1, 2)})
+    (record,) = [r for r in records if r.accessed == 'p.magnitude']
+    assert record.counts_as_use is True
 
 
 def _doctree_with_doctest_blocks(*sources):
