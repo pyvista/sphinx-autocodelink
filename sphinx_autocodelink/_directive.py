@@ -61,6 +61,7 @@ class AutoCodeLink(Directive):
 
 
 def _group_choice(arg: str) -> str:
+    """Validate the ``:group:`` option."""
     return directives.choice(arg, ('auto', 'always', 'never'))
 
 

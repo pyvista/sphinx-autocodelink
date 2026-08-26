@@ -271,16 +271,6 @@ class _NameCollector(ast.NodeVisitor):
         self.visit(cursor)
 
 
-def _accessed_names(source: str) -> set[str]:
-    """Return every dotted name accessed in ``source``, or none on a parse error."""
-    return _collect(source).accessed
-
-
-def _call_chains(source: str) -> set[tuple[str, tuple[str, ...]]]:
-    """Return every ``(call target, trailing attrs)`` pair, or none on a parse error."""
-    return _collect(source).call_chains
-
-
 def _collect(source: str) -> _NameCollector:
     """Parse ``source`` and return its populated name collector."""
     collector = _NameCollector()
@@ -318,57 +308,54 @@ def _class_candidates(cls: type, method: list[str]) -> list[str]:
     return [name for cc in classes for name in _module_path_candidates(cc, method)]
 
 
+def _namespace_lookup(accessed: str, namespace: dict[str, Any]) -> tuple[Any, list[str]] | None:
+    """Return what ``accessed``'s root name is bound to and the attributes after it."""
+    root, _, rest = accessed.partition('.')
+    if root not in namespace:
+        return None
+    return namespace[root], rest.split('.') if rest else []
+
+
 def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
-    """Return candidate documented names for one dotted name access.
+    """Return candidate documented names for one dotted name access."""
+    found = _namespace_lookup(accessed, namespace)
+    if found is None:
+        return []
+    obj, remainder = found
 
-    Tries every prefix of ``accessed`` against ``namespace``; the longest match
-    wins, then walks the remaining attributes on that live object.
-    """
-    parts = accessed.split('.')
-    for split in range(len(parts)):
-        head = '.'.join(parts[: split + 1])
-        if head not in namespace:
-            continue
-        obj = namespace[head]
-        remainder = parts[split + 1 :]
+    if inspect.ismodule(obj) and not remainder:
+        return [obj.__name__]
 
-        if inspect.ismodule(obj) and not remainder:
-            return [obj.__name__]
+    is_class_attr = False
+    method: list[str] = []
+    for level in remainder:
+        owner = obj
+        # type(owner) so a class's metaclass property resolves like an instance's.
+        prop = getattr(type(owner), level, None)
+        if isinstance(prop, property):
+            obj = owner
+            is_class_attr, method = True, [level]
+            break
+        try:
+            obj = getattr(obj, level)
+        except Exception:  # noqa: BLE001
+            break
+        if inspect.ismethod(obj):
+            obj = owner
+            is_class_attr, method = True, [level]
+            break
 
-        is_class_attr = False
-        method: list[str] = []
-        for level in remainder:
-            owner = obj
-            # Checked on type(owner) either way: for an instance this is the property's
-            # defining class; for a class this is its metaclass, which is what actually gets
-            # invoked for a metaclass property (e.g. an enum's classproperty) accessed on it.
-            prop = getattr(type(owner), level, None)
-            if isinstance(prop, property):
-                obj = owner
-                is_class_attr, method = True, [level]
-                break
-            try:
-                obj = getattr(obj, level)
-            except Exception:  # noqa: BLE001
-                break
-            if inspect.ismethod(obj):
-                obj = owner
-                is_class_attr, method = True, [level]
-                break
+    if inspect.ismodule(obj):
+        return [obj.__name__]
 
-        if inspect.ismodule(obj):
-            # obj is itself a (sub)module (e.g. pv.examples) -- nothing below applies.
-            return [obj.__name__]
+    is_class = inspect.isclass(obj)
+    if is_class or is_class_attr:
+        return _class_candidates(obj if is_class else obj.__class__, method)
 
-        is_class = inspect.isclass(obj)
-        if is_class or is_class_attr:
-            return _class_candidates(obj if is_class else obj.__class__, method)
+    if inspect.isroutine(obj):
+        return list(_module_path_candidates(obj, []))
 
-        if inspect.isroutine(obj):
-            return list(_module_path_candidates(obj, []))
-
-        return list(_module_path_candidates(obj.__class__, []))
-    return []
+    return list(_module_path_candidates(obj.__class__, []))
 
 
 def _candidates_for_callable(func: Any) -> list[str]:
@@ -404,24 +391,20 @@ def _candidates_for_callable(func: Any) -> list[str]:
 
 def _is_attribute_read(accessed: str, namespace: dict[str, Any]) -> bool:
     """Return whether ``accessed`` reads a real value, not bare-naming a class/module/method."""
-    parts = accessed.split('.')
-    for split in range(len(parts)):
-        head = '.'.join(parts[: split + 1])
-        if head not in namespace:
-            continue
-        obj = namespace[head]
-        remainder = parts[split + 1 :]
-        if not remainder:
+    found = _namespace_lookup(accessed, namespace)
+    if found is None:
+        return False
+    obj, remainder = found
+    if not remainder:
+        return False
+    for level in remainder:
+        if isinstance(getattr(type(obj), level, None), property):
+            return True
+        try:
+            obj = getattr(obj, level)
+        except Exception:  # noqa: BLE001 -- arbitrary objects can raise anything
             return False
-        for level in remainder:
-            if isinstance(getattr(type(obj), level, None), property):
-                return True
-            try:
-                obj = getattr(obj, level)
-            except Exception:  # noqa: BLE001 -- arbitrary objects can raise anything
-                return False
-        return not (inspect.ismodule(obj) or inspect.isclass(obj) or inspect.isroutine(obj))
-    return False
+    return not (inspect.ismodule(obj) or inspect.isclass(obj) or inspect.isroutine(obj))
 
 
 #: Matches a bare dotted class name (``PolyData``); rejects ``Widget | str``, ``list[int]``.
@@ -430,19 +413,16 @@ _SIMPLE_NAME_RE = re.compile(r'[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\Z')
 
 def _resolve_object(accessed: str, namespace: dict[str, Any]) -> Any | None:
     """Resolve a dotted name to the live object it refers to, or ``None``."""
-    parts = accessed.split('.')
-    for split in range(len(parts)):
-        head = '.'.join(parts[: split + 1])
-        if head not in namespace:
-            continue
-        obj = namespace[head]
-        for level in parts[split + 1 :]:
-            try:
-                obj = getattr(obj, level)
-            except Exception:  # noqa: BLE001, PERF203 -- arbitrary objects can raise anything
-                return None
-        return obj
-    return None
+    found = _namespace_lookup(accessed, namespace)
+    if found is None:
+        return None
+    obj, remainder = found
+    for level in remainder:
+        try:
+            obj = getattr(obj, level)
+        except Exception:  # noqa: BLE001, PERF203 -- arbitrary objects can raise anything
+            return None
+    return obj
 
 
 def _call_return_type(func: Any, namespace: dict[str, Any]) -> type | None:
