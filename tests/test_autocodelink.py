@@ -851,6 +851,7 @@ def test_setup():
         'autocodelink_autodoc_backrefs': (False, 'html'),
         'autocodelink_category_labels': ({}, 'html'),
         'autocodelink_doctest_blocks': (False, 'html'),
+        'autocodelink_gallery_cards': (False, 'html'),
     }
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}
@@ -898,7 +899,10 @@ def test_resolve_link_prefers_a_non_aliased_name_for_the_same_target():
     # auto-added `:canonical:` cross-reference -- `aliased`) and its short public name,
     # both pointing at the same page. The non-aliased one must win: it's the name the
     # object is actually documented under, and what its own backreferences are keyed by.
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     resolved = autolink._resolve_link(
         ('pkg.mod.Thing', 'pkg.Thing'),
         docname='index',
@@ -913,7 +917,10 @@ def test_resolve_link_prefers_a_non_aliased_name_for_the_same_target():
 def test_resolve_link_keeps_an_aliased_name_with_no_non_aliased_alternative():
     # If every candidate resolving to this target is aliased, there's nothing better to
     # fall back to -- return it rather than nothing.
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     resolved = autolink._resolve_link(
         ('pkg.mod.Thing',),
         docname='index',
@@ -929,7 +936,10 @@ def test_resolve_link_does_not_prefer_a_non_aliased_name_at_a_different_target()
     # A later candidate resolving to a genuinely different page (e.g. a base-class
     # fallback) must not be preferred just for being non-aliased -- only an alternative
     # name for the exact same target is interchangeable with an aliased match.
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     resolved = autolink._resolve_link(
         ('pkg.mod.Thing', 'pkg.Base'),
         docname='index',
@@ -942,7 +952,10 @@ def test_resolve_link_does_not_prefer_a_non_aliased_name_at_a_different_target()
 
 
 def test_render_ref_list_shows_all_entries_at_or_under_the_threshold():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD)]
     html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
     assert html.count('<li>') == autolink._COLLAPSE_THRESHOLD
@@ -950,7 +963,10 @@ def test_render_ref_list_shows_all_entries_at_or_under_the_threshold():
 
 
 def test_render_ref_list_collapses_past_the_threshold():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
     html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
     assert html.count('<li>') == autolink._COLLAPSE_THRESHOLD + 1
@@ -1008,21 +1024,30 @@ def test_fill_index_placeholders_drops_dangling_nav_link_for_hidden_section(tmp_
 def test_render_ref_list_more_toggle_is_its_own_list_item():
     # A sibling <li> picks up the same indentation/spacing as the other entries from
     # whatever list styling the theme already applies -- no bespoke CSS to keep in sync.
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
     html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
     assert '<li class="sphinx-autocodelink-index-more"><details>' in html
 
 
 def test_render_ref_list_no_column_layout_below_the_column_threshold():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     refs = [f'page{i}' for i in range(autolink._COLLAPSE_THRESHOLD + 1)]
     html = autolink._render_ref_list(refs, docname='index', app=app, show_titles=False)
     assert 'columns:' not in html
 
 
 def test_render_ref_list_columns_past_the_column_threshold():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     refs = [
         f'page{i}'
         for i in range(autolink._COLLAPSE_VISIBLE + autolink._COLUMN_LAYOUT_THRESHOLD + 1)
@@ -1074,7 +1099,10 @@ def test_render_grouped_refs_sorts_by_the_renamed_label_not_the_category():
 
 
 def test_render_ref_list_wraps_a_docstring_example_entry_as_a_cross_reference():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     html = autolink._render_ref_list(
         ['a'],
         docname='index',
@@ -1089,7 +1117,10 @@ def test_render_ref_list_wraps_a_docstring_example_entry_as_a_cross_reference():
 
 
 def test_render_ref_list_wraps_a_page_style_entry_as_a_ref_role():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     html = autolink._render_ref_list(
         ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Sphinx Gallery'}
     )
@@ -1100,16 +1131,86 @@ def test_render_ref_list_wraps_a_page_style_entry_as_a_ref_role():
 
 
 def test_render_ref_list_leaves_an_uncategorized_entry_plain():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     html = autolink._render_ref_list(['a'], docname='index', app=app, show_titles=False)
     assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
 
 
 def test_render_ref_list_leaves_a_custom_category_entry_plain():
-    app = SimpleNamespace(builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'))
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_gallery_cards=False),
+    )
     html = autolink._render_ref_list(
         ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Tutorials'}
     )
+    assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
+
+
+def _no_doctree(_docname):
+    """Stand in for env.get_doctree when no doctree is needed.
+
+    render_gallery_carousel falls back to the page's title (already supplied) if this raises.
+    """
+    msg = 'no doctree'
+    raise Exception(msg)  # noqa: TRY002 -- matches an arbitrary env failure
+
+
+def _gallery_app(*, gallery_cards):
+    """Build a fake app with just enough of env/builder for render_gallery_carousel to run."""
+    return SimpleNamespace(
+        builder=SimpleNamespace(
+            get_relative_uri=lambda _from, to: f'{to}.html',
+            get_target_uri=lambda docname: f'{docname}.html',
+        ),
+        env=SimpleNamespace(
+            titles={'a': nodes.title('A', 'A')}, images={}, get_doctree=_no_doctree
+        ),
+        config=SimpleNamespace(autocodelink_gallery_cards=gallery_cards),
+    )
+
+
+def test_render_ref_list_gallery_cards_disabled_by_default_uses_plain_list():
+    app = _gallery_app(gallery_cards=False)
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Sphinx Gallery'}
+    )
+    assert 'sd-cards-carousel' not in html
+    assert html.startswith('<ul class="sphinx-autocodelink-index">')
+
+
+def test_render_ref_list_gallery_cards_enabled_renders_carousel():
+    app = _gallery_app(gallery_cards=True)
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Sphinx Gallery'}
+    )
+    assert 'sd-cards-carousel' in html
+    assert '<ul' not in html
+
+
+def test_render_ref_list_gallery_cards_mixed_categories():
+    app = _gallery_app(gallery_cards=True)
+    app.env.titles['b'] = nodes.title('B', 'B')
+    html = autolink._render_ref_list(
+        ['a', 'b'],
+        docname='index',
+        app=app,
+        show_titles=True,
+        categories={'a': 'Sphinx Gallery', 'b': 'Documentation'},
+    )
+    assert 'sd-cards-carousel' in html
+    assert '<ul class="sphinx-autocodelink-index"><li><a href="b.html">B</a></li></ul>' in html
+
+
+def test_render_ref_list_gallery_cards_no_gallery_entries_unaffected():
+    app = _gallery_app(gallery_cards=True)
+    html = autolink._render_ref_list(
+        ['a'], docname='index', app=app, show_titles=False, categories={'a': 'Documentation'}
+    )
+    assert 'sd-cards-carousel' not in html
     assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
 
 

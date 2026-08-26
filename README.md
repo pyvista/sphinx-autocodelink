@@ -193,6 +193,18 @@ actually has:
 Either way, the theme is doing the styling on its own, from the same markup a real cross-reference
 or `:ref:` carries; nothing to configure here.
 
+**Gallery cards (opt-in).** Set `autocodelink_gallery_cards = True` to render `'Sphinx Gallery'`
+entries as thumbnail cards instead of a link list -- the same thumbnail, title, and hover-tooltip
+intro Sphinx-Gallery's own gallery index pages use, since that's exactly what these are: real
+Sphinx-Gallery examples, referenced from elsewhere. Requires Sphinx-Gallery (already a given, for
+any entry to be tagged `'Sphinx Gallery'` at all) and [sphinx-design](https://sphinx-design.readthedocs.io/),
+whose card/grid/carousel styling this reuses -- both extensions' CSS/JS, already loaded site-wide
+once they're active. Four thumbnails per card, as many cards as needed, in one
+horizontally-scrolling carousel (four across on a wide screen, two across on a narrow one) --
+this replaces the 8-entry collapse-to-`<details>` behavior above entirely, at any length. Other
+categories mixed into the same list (e.g. `:group: never`) are unaffected, still rendering as a
+plain link list beside the carousel.
+
 ### Resolving identifiers local to a helper function
 
 Only a script's top-level namespace is resolvable by default -- a root identifier that only ever

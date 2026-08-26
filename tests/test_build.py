@@ -67,6 +67,16 @@ def _block_after(html: str, marker: str) -> str:
     return rest[:end]
 
 
+def _block_between(html: str, start_marker: str, end_marker: str) -> str:
+    """Return the HTML strictly between two marker strings.
+
+    Unlike ``_block_after``, doesn't assume the block itself contains no ``<p>`` -- a
+    gallery card's own thumbnail markup does (see ``_gallery_cards._thumbnail_html``).
+    """
+    start = html.index(start_marker) + len(start_marker)
+    return html[start : html.index(end_marker, start)]
+
+
 def test_autocodelink_index(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()
@@ -131,6 +141,49 @@ def test_autocodelink_index(tmp_path):
 
     # filtered index for a name with no references.
     assert 'No references found.' in refs
+
+
+def test_gallery_cards_disabled_by_default(tmp_path):
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    forced_flat = _block_between(
+        refs, 'forced flat despite 3 categories applying:', 'docnames instead of titles:'
+    )
+    assert 'sd-cards-carousel' not in forced_flat
+
+
+def test_gallery_cards_renders_thumbnail_carousel(tmp_path):
+    outdir, _ = _build(tmp_path, confoverrides={'autocodelink_gallery_cards': True})
+    refs = (outdir / 'refs.html').read_text()
+    forced_flat = _block_between(
+        refs, 'forced flat despite 3 categories applying:', 'docnames instead of titles:'
+    )
+
+    assert 'sd-cards-carousel' in forced_flat
+    assert forced_flat.count('sphx-glr-thumbcontainer') == 2  # plot_thing, plot_other
+    # The other 2 categories mixed into this same flat list still render as a plain <ul>,
+    # since only "Sphinx Gallery" entries become cards -- their carousel isn't a <ul> at all.
+    assert '<li><a href="index.html">Index</a></li>' in forced_flat
+    assert '<span class="std std-ref"' not in forced_flat  # no lingering plain :ref: style
+
+    # Each thumbnail points at a real, built image file -- not a guessed path.
+    for name in ('plot_thing', 'plot_other'):
+        match = re.search(rf'<img src="([^"]*sphx_glr_{name}_thumb\.png)"', forced_flat)
+        assert match is not None, f'no thumbnail image found for {name}'
+        assert (outdir / match.group(1)).is_file()
+
+    # Hovering over a card shows the example's own intro paragraph, not Sphinx-Gallery's own
+    # "go to the end to download" note, which precedes the title on every example page.
+    assert 'tooltip="Uses the fixture' in forced_flat
+    assert 'Go to the end to download' not in forced_flat
+
+    # The example's own title is shown -- as a visible title div, and (hidden by
+    # Sphinx-Gallery's own CSS) as the stretched link's text, not a bare docname either way.
+    assert '<div class="sphx-glr-thumbnail-title">Plotting a thing</div>' in forced_flat
+    assert (
+        '<a class="reference internal" href="auto_examples/plot_thing.html">'
+        '<span>Plotting a thing</span></a>' in forced_flat
+    )
 
 
 def test_autocodelink_category_labels_renames_group_headings(tmp_path):
