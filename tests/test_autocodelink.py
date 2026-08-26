@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from enum import Enum
 import inspect
 import re
 import sys
@@ -697,6 +698,33 @@ def test_records_for_bare_mention_does_not_count_as_use():
     # variable passed around without being invoked or having a property read off it.
     records = autolink._records_for('print(w)\n', {'w': _Widget()})
     (record,) = [r for r in records if r.accessed == 'w']
+    assert record.counts_as_use is False
+
+
+class _Color(Enum):
+    """A minimal Enum, for counts_as_use tests covering enum-member access."""
+
+    RED = 1
+    BLUE = 2
+
+
+def test_records_for_enum_member_access_counts_as_use():
+    # e.g. `pv.CellType.HEXAHEDRON` -- pulling a member off a class is a real usage.
+    records = autolink._records_for('Color.RED\n', {'Color': _Color})
+    (record,) = [r for r in records if r.accessed == 'Color.RED']
+    assert record.counts_as_use is True
+
+
+def test_records_for_bare_class_reference_does_not_count_as_use():
+    # e.g. `isinstance(x, pv.CellType)` -- naming the class itself, not a member.
+    records = autolink._records_for('print(Color)\n', {'Color': _Color})
+    (record,) = [r for r in records if r.accessed == 'Color']
+    assert record.counts_as_use is False
+
+
+def test_records_for_uncalled_method_reference_does_not_count_as_use():
+    records = autolink._records_for('callback = w.draw\n', {'w': _Widget()})
+    (record,) = [r for r in records if r.accessed == 'w.draw']
     assert record.counts_as_use is False
 
 
@@ -1698,6 +1726,38 @@ def test_embed_links_zero_use_candidate_omitted_from_used_in(tmp_path):
     # The bare mention in `index.html` itself is still linked -- only the "Used In"
     # list membership (and the frequency count) are gated on real usage.
     assert 'href="api#pkg.thing"' in (tmp_path / 'index.html').read_text()
+
+
+def test_embed_links_enum_member_access_appears_in_used_in(tmp_path):
+    # A page referencing a target only via enum-member access (`Color.RED`) still counts.
+    (tmp_path / 'index.html').write_text('<pre><span class="n">Color</span></pre>')
+    target = f'{_Color.__module__}.{_Color.__qualname__}'
+    api_html = (
+        '<html><body>'
+        f'<section class="sphinx-autocodelink-backrefs" id="autocodelink-{target}">'
+        '<h2>Used In</h2>'
+        '<div class="sphinx-autocodelink-index" data-opts="'
+        f'{{&quot;name&quot;: &quot;{target}&quot;, &quot;hide_empty&quot;: false, '
+        '&quot;titles&quot;: false, &quot;group&quot;: &quot;auto&quot;}"></div>'
+        '</section>'
+        '</body></html>'
+    )
+    (tmp_path / 'api.html').write_text(api_html)
+
+    env = _fake_env()
+    env.domains['py'].objects[target] = SimpleNamespace(
+        docname='api', node_id=target, aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': autolink._records_for('Color.RED\n', {'Color': _Color})},
+    )
+    setattr(env, autolink._INDEX_DOCS_ATTR, {'api'})
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+
+    assert 'href="index"' in (tmp_path / 'api.html').read_text()
 
 
 def test_embed_links_name_dedup(tmp_path):

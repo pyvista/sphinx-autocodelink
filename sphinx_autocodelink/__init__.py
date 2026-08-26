@@ -123,12 +123,11 @@ class _Candidate:
 
     accessed: str
     candidates: tuple[str, ...]
-    #: Whether this occurrence is a real usage -- a call site or a live ``@property``
-    #: read -- for ``autocodelink_sort = 'frequency'``. False for a bare mention with
-    #: neither (a type hint, an ``isinstance`` check, or a variable simply referenced
-    #: without being called or having a property read off it). Doesn't affect linking
-    #: or the "Used In" list itself, which still treats every resolved reference as
-    #: "used" -- only the frequency count does not.
+    #: Whether this occurrence is a real usage -- a call, an attribute read, or an enum
+    #: member/constant pulled off a class -- rather than a bare mention (a type hint, an
+    #: ``isinstance`` check, a variable just referenced). Gates both the frequency count
+    #: and whether the referencing page appears in the "Used In" list at all; an
+    #: in-source hyperlink is still added for a bare mention regardless.
     counts_as_use: bool = True
 
 
@@ -308,27 +307,25 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
     return []
 
 
-def _is_property_access(accessed: str, namespace: dict[str, Any]) -> bool:
-    """Return whether resolving ``accessed`` reads a live ``@property`` somewhere along it.
-
-    A narrower walk than :func:`_candidate_names`'s own: it only answers whether *some*
-    attribute step is a genuine property read (``pl.camera_position``), not a bare class
-    or module reference (``pv.Plotter`` in a type hint) or an uncalled bound method.
-    """
+def _is_attribute_read(accessed: str, namespace: dict[str, Any]) -> bool:
+    """Return whether ``accessed`` reads a real value, not bare-naming a class/module/method."""
     parts = accessed.split('.')
     for split in range(len(parts)):
         head = '.'.join(parts[: split + 1])
         if head not in namespace:
             continue
         obj = namespace[head]
-        for level in parts[split + 1 :]:
+        remainder = parts[split + 1 :]
+        if not remainder:
+            return False
+        for level in remainder:
             if isinstance(getattr(type(obj), level, None), property):
                 return True
             try:
                 obj = getattr(obj, level)
             except Exception:  # noqa: BLE001 -- arbitrary objects can raise anything
                 return False
-        return False
+        return not (inspect.ismodule(obj) or inspect.isclass(obj) or inspect.isroutine(obj))
     return False
 
 
@@ -533,7 +530,7 @@ def _records_for(source: str, namespace: dict[str, Any]) -> list[_Candidate | _C
     for accessed in sorted(collected.accessed):
         candidates = _candidate_names(accessed, namespace)
         if candidates:
-            counts_as_use = accessed in collected.called or _is_property_access(accessed, namespace)
+            counts_as_use = accessed in collected.called or _is_attribute_read(accessed, namespace)
             records.append(_Candidate(accessed, tuple(candidates), counts_as_use))
     for call_target, trailing in sorted(collected.call_chains):
         calls = collected.call_chain_calls[(call_target, trailing)]
