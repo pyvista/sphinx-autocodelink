@@ -43,7 +43,7 @@ _CAROUSEL_STYLE = (
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbnail-title{'
     'width:100%;min-width:0;min-height:2.6em;line-height:1.3em}'
     '.sphinx-autocodelink-gallery-carousel .sphinx-autocodelink-usage-count{'
-    'height:1.2em;font-size:0.85em;opacity:0.75}'
+    'height:1.2em;font-size:0.85em;opacity:0.75;margin-top:auto}'
     '.sphinx-autocodelink-gallery-carousel .sd-container-fluid{padding:0}'
     '.sphinx-autocodelink-gallery-carousel .sd-row{'
     'margin:0 -8px;column-gap:0;row-gap:16px}'
