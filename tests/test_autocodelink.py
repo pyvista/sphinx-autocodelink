@@ -1054,10 +1054,8 @@ def test_resolve_link_external():
 
 
 def test_resolve_link_prefers_a_non_aliased_name_for_the_same_target():
-    # A class registers under both its full defining-module path (Sphinx's own
-    # auto-added `:canonical:` cross-reference -- `aliased`) and its short public name,
-    # both pointing at the same page. The non-aliased one must win: it's the name the
-    # object is actually documented under, and what its own backreferences are keyed by.
+    # Both names point at the same page; the non-aliased one is what the object is
+    # documented under, and what its backreferences are keyed by.
     app = SimpleNamespace(
         builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
         config=SimpleNamespace(autocodelink_gallery_cards=False),
