@@ -180,6 +180,19 @@ autocodelink_category_labels = {
 entries; past that it shows the first 5 and tucks the rest behind a `<details>` "N more" toggle, so
 a heavily-used name's index entry doesn't turn into a wall of links.
 
+**Sorting.** `autocodelink_sort` chooses how each rendered list is ordered:
+
+- `'alphabetical'` (the default) -- by display text, same as always.
+- `'frequency'` -- by how many times each referencing page's own recorded source actually used
+  the target, most-used first, ties broken alphabetically. A page referencing the target more
+  than once (through more than one code block, or more than one spelling of the same object)
+  counts every one of them, not just whether it referenced it at all -- so the "N more" collapse
+  above tucks away the least-used pages, not an alphabetical tail.
+
+```python
+autocodelink_sort = 'frequency'
+```
+
 **Styling.** Three categories, three link styles, matching how specific a real target each one
 actually has:
 

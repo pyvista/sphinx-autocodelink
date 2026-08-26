@@ -143,6 +143,41 @@ def test_autocodelink_index(tmp_path):
     assert 'No references found.' in refs
 
 
+def test_sort_alphabetical_by_default(tmp_path):
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
+    order = re.findall(r'<li><a href="([^"]*)"', forced_flat)
+    # 'index' references pkg.thing twice (see test_sort_frequency below) but still sorts
+    # after 'api' alphabetically by title ('API' < 'Index') when frequency isn't in play.
+    assert order == [
+        'api.html',
+        'index.html',
+        'auto_examples/plot_thing.html',
+        'auto_examples/plot_other.html',
+    ]
+
+
+def test_sort_frequency_ranks_by_usage_and_accumulates_across_spellings(tmp_path):
+    # index.rst references pkg.thing twice, through two different spellings of the same
+    # object -- once as `pkg.thing()`, once (inside a helper) as `local_ref.thing()`, after
+    # `local_ref = pkg`. Both must count toward the same page's total, not just the last one
+    # resolved -- otherwise this wouldn't outrank api.html's and the gallery examples' single
+    # reference each.
+    outdir, _ = _build(tmp_path, confoverrides={'autocodelink_sort': 'frequency'})
+    refs = (outdir / 'refs.html').read_text()
+    forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
+    order = re.findall(r'<li><a href="([^"]*)"', forced_flat)
+    assert order[0] == 'index.html'
+    # api.html and the two gallery examples are tied at one use each -- alphabetical by
+    # title breaks the tie ('API' < 'Plotting a thing' < 'Plotting another thing').
+    assert order[1:] == [
+        'api.html',
+        'auto_examples/plot_thing.html',
+        'auto_examples/plot_other.html',
+    ]
+
+
 def test_gallery_cards_disabled_by_default(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()
