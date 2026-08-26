@@ -95,7 +95,7 @@ gallery pages -- then there's nothing to fall back to it for.
 ### Bare doctest blocks (opt-in, site-wide)
 
 The directive, the Sphinx-Gallery scraper, and library use (below) are all opt-in *by use*: only
-the specific blocks that name them get executed. `autocodelink_autodoc_backrefs` is the one
+the specific blocks that name them get executed. `autocodelink_doctest_blocks` is the one
 exception -- set it and *every* bare `>>>` doctest block anywhere in the docs (a docstring's
 Examples section, a hand-written page, anywhere) is executed and its identifiers recorded, with no
 `.. autocodelink::` needed on any of them individually:
@@ -167,7 +167,9 @@ an object's own description (e.g. a docstring's Examples section, rendered throu
 domain directive like `.. py:function::`), in which case it's tagged `'Docstring Examples'` instead.
 Detected automatically when `record_namespace()`/`.. autocodelink::` are given the calling
 directive's own `state`; not available to `AutoCodeLinkScraper`, since Sphinx-Gallery examples don't
-run inside any object's own description in the first place.
+run inside any object's own description in the first place. `autocodelink_doctest_blocks` gets the
+same automatic split too -- by the built doctree's own structure instead of directive `state`, since
+by the time it runs (`doctree-read`) there's no directive call to hand one.
 
 Set `autocodelink_category_labels` to rename categories' *displayed* group headings, without
 changing the category strings themselves (what `:group:` actually groups by) -- e.g. to drop
