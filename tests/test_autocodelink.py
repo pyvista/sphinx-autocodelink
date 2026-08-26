@@ -1281,8 +1281,14 @@ def test_render_ref_list_sort_frequency_shows_usage_count():
         usage_counts={'a': 1, 'b': 5},
     )
     # Outside the <a> -- not part of the link itself.
-    assert '<a href="a.html">a</a> <span class="sphinx-autocodelink-usage-count">(1 use)</span>' in html
-    assert '<a href="b.html">b</a> <span class="sphinx-autocodelink-usage-count">(5 uses)</span>' in html
+    assert (
+        '<a href="a.html">a</a> <span class="sphinx-autocodelink-usage-count">(1 use)</span>'
+        in html
+    )
+    assert (
+        '<a href="b.html">b</a> <span class="sphinx-autocodelink-usage-count">(5 uses)</span>'
+        in html
+    )
 
 
 def test_render_ref_list_sort_frequency_shows_zero_for_an_uncounted_ref():
