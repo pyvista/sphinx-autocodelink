@@ -59,9 +59,7 @@ def reset_autocodelink(
     """Trace the example about to run, for identifiers its top-level namespace misses.
 
     A Sphinx-Gallery ``reset_modules`` entry, added automatically alongside
-    :class:`AutoCodeLinkScraper` -- add :data:`RESET_AUTOCODELINK` to that setting by
-    hand only if something replaces it after ``config-inited``. Needs Python 3.12+;
-    below that it is a no-op.
+    :class:`AutoCodeLinkScraper`. Needs Python 3.12+; below that it is a no-op.
     """
     tracer = _tracer()
     if when != 'before' or not fname:
@@ -78,8 +76,7 @@ class AutoCodeLinkScraper:
     """A no-op ``image_scrapers`` entry that records identifiers for linking.
 
     Add alongside your real image scraper(s). ``trace=False`` records only an example's
-    top-level scope, leaving its helper functions' own scopes and call sites alone --
-    as does Python older than 3.12, whatever ``trace`` is set to.
+    top-level scope, leaving its helper functions' own scopes and call sites alone.
     """
 
     def __init__(
@@ -90,8 +87,7 @@ class AutoCodeLinkScraper:
     ) -> None:
         """Store the records directory, relative to the Sphinx source directory, and category.
 
-        ``category`` tags every page this scraper records; pass ``''`` to leave them
-        untagged. ``trace`` is what reaches past an example's own top-level scope.
+        ``category`` tags every page this scraper records; pass ``''`` to leave them untagged.
         """
         self.records_dir = records_dir
         self.category = category

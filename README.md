@@ -3,12 +3,15 @@
 Turn the identifiers in your documentation's code blocks into links to the API docs they
 refer to.
 
-Because the links come from the objects your code actually produced when it ran, they land on
-the right target even when the type isn't written anywhere: a chained call, a subscript, a
-variable local to a helper function. That dynamic analysis is based on how
-[Sphinx-Gallery](https://sphinx-gallery.github.io) resolves links for its `'reference_url'`
-configuration option. (For the same feature by static analysis instead, see
-[sphinx-codeautolink](https://github.com/felix-hilden/sphinx-codeautolink).)
+This extension is similar to
+[sphinx-codeautolink](https://github.com/felix-hilden/sphinx-codeautolink), except it uses
+dynamic analysis to resolve links instead of static analysis: it runs your code and asks the
+resulting objects what they are, rather than inferring their types from the source. The
+dynamic analysis is based on how [Sphinx-Gallery](https://sphinx-gallery.github.io) resolves
+links for its `'reference_url'` configuration option.
+
+Running the code is what lets a link land on the right target when the type is written
+nowhere — a chained call, a subscript, a variable local to a helper function.
 
 ## Quick start
 
@@ -110,7 +113,8 @@ namespace = exec_with_local_scopes(compile(code, filename, 'exec'), {}, filename
 
 It runs `code` exactly as `exec(code, namespace)` would, and returns a namespace with the
 script's own calls' locals merged in underneath. Merging is flat, so a local in one call can
-shadow a global, or another call's local, of the same name.
+shadow a global, or another call's local, of the same name — which resolves to the *wrong*
+link, not to no link.
 
 ## "Used In" backreferences
 
@@ -133,6 +137,9 @@ To get that on every documented object automatically, without writing it anywher
 ```python
 autocodelink_autodoc_backrefs = True
 ```
+
+This needs `sphinx.ext.autodoc` loaded, directly or through something that depends on it such
+as numpydoc. Without it nothing is appended and no warning is raised. Modules are skipped.
 
 A page is listed only if it actually *uses* the name — a call, or an attribute read such as a
 `@property` or an enum member. A bare mention (a type hint, an `isinstance` check) still gets
@@ -166,10 +173,10 @@ end, with a build warning naming it.
 
 | `conf.py` value                    | Default                    | Does                                                                        |
 | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
-| `autocodelink_autodoc_backrefs`    | `False`                    | Append a hidden-if-empty "Used In" section to every documented object       |
+| `autocodelink_autodoc_backrefs`    | `False`                    | Append a hidden-if-empty "Used In" section to every documented object but modules |
 | `autocodelink_doctest_blocks`      | `False`                    | Execute and link every bare `>>>` block site-wide                            |
 | `autocodelink_sort`                | `'alphabetical'`           | `'frequency'` ranks each list by how often the page uses the target          |
-| `autocodelink_show_usage_count`    | `False`                    | Show each entry's own count, e.g. `pkg.thing (3 uses)`                       |
+| `autocodelink_show_usage_count`    | `False`                    | Show each listed page's own count, e.g. `Tutorial page (3 uses)`             |
 | `autocodelink_gallery_cards`       | `False`                    | Render gallery entries as thumbnail cards instead of a link list             |
 | `autocodelink_category_labels`     | `{}`                       | Rename a category's displayed heading                                        |
 | `autocodelink_category_order`      | `()`                       | Order the groups explicitly instead of alphabetically                        |
@@ -196,7 +203,12 @@ needs Python 3.12+; below that, an example resolves from its top-level namespace
 `AutoCodeLinkScraper(trace=False)` turns it off. Sphinx-Gallery's `reset_modules_order` has to
 include `'before'` (the default), and you get a build warning if it doesn't.
 
-A helper the example never calls can't resolve — there's nothing executed to observe.
+Two things still don't resolve, both because there's nothing executed to observe: a helper
+the example never calls, and a scope left by a raised exception.
+
+One asymmetry worth knowing: the in-source link on a complex receiver's trailing attribute
+needs the whole expression on one line. Its "Used In" entry doesn't — that's recorded either
+way.
 
 If you also set `sphinx_gallery_conf['reference_url']` for a module this covers, both extensions
 will try to link the same identifiers. Nothing breaks — this one skips anything already inside a

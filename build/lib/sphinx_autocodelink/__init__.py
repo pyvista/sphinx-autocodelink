@@ -109,8 +109,7 @@ def _highlight_fragment(expr: str) -> str | None:
 def _expr_pattern_source(expr: str) -> str | None:
     """Build a regex source matching just ``expr``'s trailing ``.attribute``.
 
-    The receiver goes in a fixed-width lookbehind -- hence escaped strictly, where only
-    the trailing attribute is loosened -- leaving its own names free to be linked.
+    The receiver goes in a lookbehind, leaving its own names free to be linked.
     """
     fragment = _highlight_fragment(expr)
     if fragment is None:
@@ -257,11 +256,7 @@ def _class_candidates(cls: type, method: list[str]) -> list[str]:
 
 
 def _namespace_lookup(accessed: str, namespace: dict[str, Any]) -> tuple[Any, list[str]] | None:
-    """Return what ``accessed``'s root name is bound to and the attributes after it.
-
-    Only the root name is looked up, as in any real Python namespace; a dotted key is
-    never matched.
-    """
+    """Return what ``accessed``'s root name is bound to and the attributes after it."""
     root, _, rest = accessed.partition('.')
     if root not in namespace:
         return None
@@ -313,9 +308,8 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
 def _candidates_for_callable(func: Any) -> list[str]:
     """Return candidate documented names for a callable observed at a real call site.
 
-    Builtins are excluded as noise -- name-based resolution never found them either, so
-    linking every ``print`` closes no gap. So are anonymous qualified names
-    (``<locals>``, ``<genexpr>``), which are never documented objects.
+    Builtins and anonymous qualified names (``<locals>``, ``<genexpr>``) are excluded:
+    nothing nested or anonymous is a documented object.
     """
     if inspect.isclass(func):
         candidates = _class_candidates(func, [])
@@ -541,10 +535,9 @@ def exec_with_local_scopes(
 ) -> dict[str, Any]:
     """Execute ``code`` in ``namespace``, and return every local scope seen merged in.
 
-    Runs exactly as ``exec(code, namespace)`` would, ``namespace`` populated the same
-    way; only the returned dict differs. Only frames from ``filename`` are captured, and
-    a local can shadow a global, or another call's local, of the same name -- resolving
-    to the wrong link rather than to none.
+    Runs exactly as ``exec(code, namespace)`` would, leaving ``namespace`` itself
+    unchanged. Only frames from ``filename`` are captured; ``namespace`` wins on name
+    conflicts, and one call's locals can shadow another's.
     """
     captured: dict[str, Any] = {}
     old_profile = sys.getprofile()

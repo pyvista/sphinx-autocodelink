@@ -100,9 +100,7 @@ class ScopeTracer:
     def close(self) -> None:
         """Stop tracing and release the ``sys.monitoring`` tool id this claimed.
 
-        The ``DISABLE``-d state that makes tracing cheap lives with the tool id, so a
-        build holds one for its whole run; only a caller building more than one tracer
-        in a process needs this.
+        Only needed by a caller that builds more than one tracer in a process.
         """
         self.stop()
         if self._tool_id is not None:
@@ -141,11 +139,7 @@ class ScopeTracer:
         return True
 
     def _start_event(self, code: CodeType, instruction_offset: int) -> Any:
-        """Instrument a traced file's code object on first entry; ignore everything else.
-
-        Returns ``DISABLE`` on every path: a traced code object keeps the per-code
-        events installed here, and a foreign one never needs a second callback.
-        """
+        """Instrument a traced file's code object on first entry; ignore everything else."""
         disable = sys.monitoring.DISABLE
         try:
             if not self._ready() or not self._is_traced(code):

@@ -30,10 +30,8 @@ _THUMBNAILS_PER_CARD = 4
 _INTRO_MAX_CHARS = 95
 
 #: Sizes thumbnails to the carousel's own variable-width columns rather than
-#: Sphinx-Gallery's fixed grid cells; rebuilds sphinx-design's horizontal-only gutters
-#: as a matching negative-margin/padding pair, so wrapped rows get an equal vertical gap
-#: (the horizontal one comes from that pair, not from ``column-gap``); and reserves the
-#: scrollbar's space at all times so hovering the carousel doesn't shift the page.
+#: Sphinx-Gallery's fixed grid cells, and reserves the scrollbar's space at all times
+#: so hovering the carousel doesn't shift the page.
 _CAROUSEL_STYLE = (
     '<style>'
     '.sphinx-autocodelink-gallery-carousel .sphx-glr-thumbcontainer{overflow:hidden;height:100%}'

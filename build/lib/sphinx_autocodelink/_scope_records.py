@@ -73,9 +73,8 @@ class _SourceIndex:
                 self.calls_by_line.setdefault(node.lineno, []).append(node)
 
 
-#: Parsed source per traced filename, and instruction positions per code object, both
-#: cleared between examples by :func:`clear_caches`. Code objects hold only constants,
-#: so keying on them retains nothing the example built.
+#: Parsed source per traced filename, and instruction positions per code object,
+#: both cleared between examples by :func:`clear_caches`.
 _INDEXES: dict[str, _SourceIndex | None] = {}
 _POSITIONS: dict[CodeType, list[Any]] = {}
 
