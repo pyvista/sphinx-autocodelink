@@ -145,6 +145,11 @@ included, when there's nothing to show, instead of printing "No references found
 Referencing pages show their real title by default (read straight from Sphinx's own tracked
 document titles), not their docname. Add `:no-titles:` to show docnames instead.
 
+A page only appears in this list if it actually *uses* the target: a call, an attribute read
+(a `@property`, or a class member like an enum entry), not just a bare mention (a type hint, an
+`isinstance` check, a variable simply referenced) -- though a bare mention still gets its own
+in-source hyperlink either way.
+
 Set `autocodelink_autodoc_backrefs = True` to append exactly that -- a hidden-if-empty "Used In"
 section -- to every autodoc-documented object's own docstring automatically, via
 `autodoc-process-docstring`. Off by default; requires `sphinx.ext.autodoc` (directly, or via
@@ -184,12 +189,10 @@ a heavily-used name's index entry doesn't turn into a wall of links.
 
 - `'alphabetical'` (the default) -- by display text, same as always.
 - `'frequency'` -- by how many times each referencing page's own recorded source actually used
-  the target, most-used first, ties broken alphabetically. "Used" means a call site or a live
-  `@property` read (`pkg.thing()`, `mesh.points`) -- a bare mention with neither, like a type hint
-  or an `isinstance` check, doesn't count. A page referencing the target more than once (through
-  more than one code block, or more than one spelling of the same object) counts every one of
-  them, not just whether it referenced it at all -- so the "N more" collapse above tucks away the
-  least-used pages, not an alphabetical tail.
+  the target (see "used" above), most-used first, ties broken alphabetically. A page using the
+  target more than once (through more than one code block, or more than one spelling of the same
+  object) counts every one of them -- so the "N more" collapse above tucks away the least-used
+  pages, not an alphabetical tail.
 
 ```python
 autocodelink_sort = 'frequency'

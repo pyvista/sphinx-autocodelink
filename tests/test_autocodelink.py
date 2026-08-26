@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import ast
+from collections import namedtuple
+import dataclasses
+from enum import Enum
+import functools
 import inspect
 import re
 import sys
@@ -698,6 +702,112 @@ def test_records_for_bare_mention_does_not_count_as_use():
     records = autolink._records_for('print(w)\n', {'w': _Widget()})
     (record,) = [r for r in records if r.accessed == 'w']
     assert record.counts_as_use is False
+
+
+class _Color(Enum):
+    """A minimal Enum, for counts_as_use tests covering enum-member access."""
+
+    RED = 1
+    BLUE = 2
+
+
+def test_records_for_enum_member_access_counts_as_use():
+    # e.g. `pv.CellType.HEXAHEDRON` -- pulling a member off a class is a real usage.
+    records = autolink._records_for('Color.RED\n', {'Color': _Color})
+    (record,) = [r for r in records if r.accessed == 'Color.RED']
+    assert record.counts_as_use is True
+
+
+def test_records_for_bare_class_reference_does_not_count_as_use():
+    # e.g. `isinstance(x, pv.CellType)` -- naming the class itself, not a member.
+    records = autolink._records_for('print(Color)\n', {'Color': _Color})
+    (record,) = [r for r in records if r.accessed == 'Color']
+    assert record.counts_as_use is False
+
+
+def test_records_for_uncalled_method_reference_does_not_count_as_use():
+    records = autolink._records_for('callback = w.draw\n', {'w': _Widget()})
+    (record,) = [r for r in records if r.accessed == 'w.draw']
+    assert record.counts_as_use is False
+
+
+def test_records_for_uncalled_staticmethod_reference_does_not_count_as_use():
+    records = autolink._records_for('callback = Widget.draw\n', {'Widget': _Widget})
+    (record,) = [r for r in records if r.accessed == 'Widget.draw']
+    assert record.counts_as_use is False
+
+
+class _Sized:
+    """A minimal stand-in with a ``cached_property`` and a plain instance attribute."""
+
+    def __init__(self) -> None:
+        self.label = 'sized'
+
+    @functools.cached_property
+    def area(self) -> int:
+        """Return a constant area."""
+        return 42
+
+
+def test_records_for_cached_property_read_counts_as_use():
+    # functools.cached_property doesn't subclass property -- a different code path.
+    records = autolink._records_for('s.area\n', {'s': _Sized()})
+    (record,) = [r for r in records if r.accessed == 's.area']
+    assert record.counts_as_use is True
+
+
+def test_records_for_plain_instance_attribute_counts_as_use():
+    records = autolink._records_for('s.label\n', {'s': _Sized()})
+    (record,) = [r for r in records if r.accessed == 's.label']
+    assert record.counts_as_use is True
+
+
+def test_records_for_namedtuple_field_counts_as_use():
+    point = namedtuple('Point', ['x', 'y'])(1, 2)
+    records = autolink._records_for('p.x\n', {'p': point})
+    (record,) = [r for r in records if r.accessed == 'p.x']
+    assert record.counts_as_use is True
+
+
+def test_records_for_module_constant_counts_as_use():
+    mod = types.ModuleType('fake_mod')
+    mod.CONST = 3.14
+    records = autolink._records_for('mod.CONST\n', {'mod': mod})
+    (record,) = [r for r in records if r.accessed == 'mod.CONST']
+    assert record.counts_as_use is True
+
+
+def test_records_for_bare_submodule_reference_does_not_count_as_use():
+    parent = types.ModuleType('fake_parent')
+    parent.sub = types.ModuleType('fake_parent.sub')
+    records = autolink._records_for('print(parent.sub)\n', {'parent': parent})
+    (record,) = [r for r in records if r.accessed == 'parent.sub']
+    assert record.counts_as_use is False
+
+
+@dataclasses.dataclass
+class _Point:
+    """A minimal dataclass, for counts_as_use tests covering dataclass fields."""
+
+    x: int
+    y: int = 0
+
+    @property
+    def magnitude(self) -> float:
+        """Return the distance from the origin."""
+        return (self.x**2 + self.y**2) ** 0.5
+
+
+def test_records_for_dataclass_field_counts_as_use():
+    records = autolink._records_for('p.x\n', {'p': _Point(1, 2)})
+    (record,) = [r for r in records if r.accessed == 'p.x']
+    assert record.counts_as_use is True
+
+
+def test_records_for_dataclass_property_counts_as_use():
+    records = autolink._records_for('p.magnitude\n', {'p': _Point(1, 2)})
+    (record,) = [r for r in records if r.accessed == 'p.magnitude']
+    assert record.counts_as_use is True
 
 
 def _doctree_with_doctest_blocks(*sources):
@@ -1698,6 +1808,38 @@ def test_embed_links_zero_use_candidate_omitted_from_used_in(tmp_path):
     # The bare mention in `index.html` itself is still linked -- only the "Used In"
     # list membership (and the frequency count) are gated on real usage.
     assert 'href="api#pkg.thing"' in (tmp_path / 'index.html').read_text()
+
+
+def test_embed_links_enum_member_access_appears_in_used_in(tmp_path):
+    # A page referencing a target only via enum-member access (`Color.RED`) still counts.
+    (tmp_path / 'index.html').write_text('<pre><span class="n">Color</span></pre>')
+    target = f'{_Color.__module__}.{_Color.__qualname__}'
+    api_html = (
+        '<html><body>'
+        f'<section class="sphinx-autocodelink-backrefs" id="autocodelink-{target}">'
+        '<h2>Used In</h2>'
+        '<div class="sphinx-autocodelink-index" data-opts="'
+        f'{{&quot;name&quot;: &quot;{target}&quot;, &quot;hide_empty&quot;: false, '
+        '&quot;titles&quot;: false, &quot;group&quot;: &quot;auto&quot;}"></div>'
+        '</section>'
+        '</body></html>'
+    )
+    (tmp_path / 'api.html').write_text(api_html)
+
+    env = _fake_env()
+    env.domains['py'].objects[target] = SimpleNamespace(
+        docname='api', node_id=target, aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': autolink._records_for('Color.RED\n', {'Color': _Color})},
+    )
+    setattr(env, autolink._INDEX_DOCS_ATTR, {'api'})
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+
+    assert 'href="index"' in (tmp_path / 'api.html').read_text()
 
 
 def test_embed_links_name_dedup(tmp_path):
