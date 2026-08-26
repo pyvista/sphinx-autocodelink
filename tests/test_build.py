@@ -216,7 +216,7 @@ def test_gallery_cards_renders_thumbnail_carousel(tmp_path):
     )
 
     assert 'sd-cards-carousel' in forced_flat
-    assert forced_flat.count('sphx-glr-thumbcontainer') == 2  # plot_thing, plot_other
+    assert forced_flat.count('<div class="sphx-glr-thumbcontainer"') == 2  # plot_thing, plot_other
     # The other 2 categories mixed into this same flat list still render as a plain <ul>,
     # since only "Sphinx Gallery" entries become cards -- their carousel isn't a <ul> at all.
     assert '<li><a href="index.html">Index</a></li>' in forced_flat
