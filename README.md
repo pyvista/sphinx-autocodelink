@@ -5,7 +5,9 @@ refer to.
 
 Because the links come from the objects your code actually produced when it ran, they land on
 the right target even when the type isn't written anywhere: a chained call, a subscript, a
-variable local to a helper function. (For the same feature by static analysis instead, see
+variable local to a helper function. That dynamic analysis is based on how
+[Sphinx-Gallery](https://sphinx-gallery.github.io) resolves links for its `'reference_url'`
+configuration option. (For the same feature by static analysis instead, see
 [sphinx-codeautolink](https://github.com/felix-hilden/sphinx-codeautolink).)
 
 ## Quick start
