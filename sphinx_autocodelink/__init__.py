@@ -962,10 +962,14 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                 if resolved is not None:
                     name, link = resolved
                     resolved_names[candidate.accessed] = link
-                    backrefs.setdefault(name, set()).add(docname)
-                    usage_counts.setdefault(name, Counter())[docname] += name_occurrences[
-                        candidate.accessed
-                    ]
+                    # In-source hyperlinking (above) still applies to a bare mention --
+                    # a type hint or an isinstance check is still worth linking. It just
+                    # isn't a "Used In" entry: only list this page, and only count it
+                    # towards `autocodelink_sort = 'frequency'`, once it's actually used.
+                    count = name_occurrences[candidate.accessed]
+                    if count:
+                        backrefs.setdefault(name, set()).add(docname)
+                        usage_counts.setdefault(name, Counter())[docname] += count
         if not resolved_names and not resolved_calls:
             continue
 

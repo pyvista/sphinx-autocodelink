@@ -1632,6 +1632,42 @@ def test_embed_links_call_chain_unresolvable(tmp_path):
     assert out_file.read_text() == html
 
 
+def test_embed_links_zero_use_candidate_omitted_from_used_in(tmp_path):
+    # `index` only ever mentions `pkg.thing` bare (not called, not a property read) --
+    # e.g. a type hint or an `isinstance` check -- so it shouldn't show up in "Used In",
+    # even though the mention is still resolvable and still gets its own in-source link.
+    (tmp_path / 'index.html').write_text('<pre><span class="n">thing</span></pre>')
+    api_html = (
+        '<html><body>'
+        '<section class="sphinx-autocodelink-backrefs" id="autocodelink-pkg-thing">'
+        '<h2>Used In</h2>'
+        '<div class="sphinx-autocodelink-index" data-opts="'
+        '{&quot;name&quot;: &quot;pkg.thing&quot;, &quot;hide_empty&quot;: false, '
+        '&quot;titles&quot;: false, &quot;group&quot;: &quot;auto&quot;}"></div>'
+        '</section>'
+        '</body></html>'
+    )
+    (tmp_path / 'api.html').write_text(api_html)
+
+    env = _fake_env()
+    env.domains['py'].objects['pkg.thing'] = SimpleNamespace(
+        docname='api', node_id='pkg.thing', aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': [autolink._Candidate('thing', ('pkg.thing',), counts_as_use=False)]},
+    )
+    setattr(env, autolink._INDEX_DOCS_ATTR, {'api'})
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+
+    assert 'href="index"' not in (tmp_path / 'api.html').read_text()
+    # The bare mention in `index.html` itself is still linked -- only the "Used In"
+    # list membership (and the frequency count) are gated on real usage.
+    assert 'href="api#pkg.thing"' in (tmp_path / 'index.html').read_text()
+
+
 def test_embed_links_name_dedup(tmp_path):
     html = '<pre><span class="n">mesh</span></pre>'
     out_file = tmp_path / 'index.html'
