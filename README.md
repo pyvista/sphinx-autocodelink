@@ -182,10 +182,14 @@ autocodelink_category_labels = {
 ```
 
 Groups render alphabetically by their displayed label by default. Set `autocodelink_category_order`
-to override that with an explicit order instead -- list every category string that appears (not the
-renamed label); a category present but left out still renders, sorted alphabetically after the listed
-ones, with a build warning naming it so a config that's gone stale gets caught rather than silently
-misordering things:
+to override that with an explicit order instead -- list every category string *your project actually
+uses* (not the renamed label); which ones that is depends on usage, not just the three built-in
+categories above -- e.g. a project that never calls `.. autocodelink::`/`record_namespace()` outside
+a docstring only ever sees `'Sphinx Gallery'` and `'Docstring Examples'`, never `'Documentation'`, and
+a custom `category=` adds one of its own. A category present but left off the list still renders,
+sorted alphabetically after the listed ones, with a build warning naming it so a config that's gone
+stale gets caught rather than silently misordering things. Pinning gallery examples last, as in
+PyVista's own docs:
 
 ```python
 autocodelink_category_order = ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
