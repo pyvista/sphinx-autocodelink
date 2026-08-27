@@ -126,7 +126,7 @@ def test_autocodelink_index(tmp_path):
     # target to point at, so it's a plain link like any other page reference.
     assert '<a href="index.html">Index</a>' in groups['Documentation']
 
-    # :group: never forces one flat list despite the same 3 categories applying.
+    # :no-group: forces one flat list despite the same 3 categories applying.
     forced_flat = _block_after(refs, 'forced flat despite 3 categories applying:')
     assert 'sphinx-autocodelink-index-group' not in forced_flat
     assert '<a href="index.html">Index</a>' in forced_flat

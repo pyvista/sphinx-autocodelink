@@ -1184,15 +1184,15 @@ def _render_grouped_refs(
     app: Sphinx,
     categories: dict[str, str],
     show_titles: bool,
-    group_mode: str,
+    group: bool,
     usage_counts: dict[str, int] | None = None,
 ) -> str:
-    """Render ``refs`` as one flat list, or grouped by category depending on ``group_mode``."""
+    """Render ``refs`` as one flat list, or grouped by category depending on ``group``."""
     groups: dict[str, list[str]] = {}
     for ref in refs:
         groups.setdefault(categories.get(ref, _UNCATEGORIZED_LABEL), []).append(ref)
 
-    if group_mode == 'never':
+    if not group:
         return _render_ref_list(
             refs,
             docname=docname,
@@ -1231,7 +1231,7 @@ def _render_index_entry(
     app: Sphinx,
     categories: dict[str, str],
     show_titles: bool,
-    group_mode: str,
+    group: bool,
     usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> str:
     """Render one target name's list of referencing pages, or ``''`` if it has none.
@@ -1248,7 +1248,7 @@ def _render_index_entry(
         app=app,
         categories=categories,
         show_titles=show_titles,
-        group_mode=group_mode,
+        group=group,
         usage_counts=(usage_counts or {}).get(target),
     )
 
@@ -1264,7 +1264,7 @@ def _render_index_html(
     categories: dict[str, str],
     hide_empty: bool = False,
     show_titles: bool = True,
-    group_mode: str = 'auto',
+    group: bool = True,
     usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> str:
     """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
@@ -1276,7 +1276,7 @@ def _render_index_html(
             app=app,
             categories=categories,
             show_titles=show_titles,
-            group_mode=group_mode,
+            group=group,
             usage_counts=usage_counts,
         )
     else:
@@ -1288,7 +1288,7 @@ def _render_index_html(
             external=external,
             categories=categories,
             show_titles=show_titles,
-            group_mode=group_mode,
+            group=group,
             usage_counts=usage_counts,
         )
 
@@ -1308,7 +1308,7 @@ def _render_full_index(
     external: dict[str, str],
     categories: dict[str, str],
     show_titles: bool = True,
-    group_mode: str = 'auto',
+    group: bool = True,
     usage_counts: dict[str, dict[str, int]] | None = None,
 ) -> str:
     """Render the site-wide index: every resolved name and its referencing pages."""
@@ -1329,7 +1329,7 @@ def _render_full_index(
             app=app,
             categories=categories,
             show_titles=show_titles,
-            group_mode=group_mode,
+            group=group,
             usage_counts=usage_counts.get(target),
         )
         entries.append(f'<dt>{heading}</dt><dd>{body}</dd>')
@@ -1378,7 +1378,7 @@ def _fill_index_placeholders(
             categories=categories,
             hide_empty=opts['hide_empty'],
             show_titles=opts['titles'],
-            group_mode=opts['group'],
+            group=opts['group'],
             usage_counts=usage_counts,
         )
 

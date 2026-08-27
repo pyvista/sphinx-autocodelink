@@ -1224,7 +1224,7 @@ def test_render_grouped_refs_bolds_the_group_label():
         app=app,
         categories={'a': 'Docstring Examples', 'b': 'Guides'},
         show_titles=False,
-        group_mode='always',
+        group=True,
     )
     assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
 
@@ -1240,7 +1240,7 @@ def test_render_grouped_refs_auto_shows_a_single_category_subheading():
         app=app,
         categories={'a': 'Docstring Examples', 'b': 'Docstring Examples'},
         show_titles=False,
-        group_mode='auto',
+        group=True,
     )
     assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
 
@@ -1256,7 +1256,7 @@ def test_render_grouped_refs_never_shows_no_subheading_even_for_one_category():
         app=app,
         categories={'a': 'Docstring Examples', 'b': 'Docstring Examples'},
         show_titles=False,
-        group_mode='never',
+        group=False,
     )
     assert 'sphinx-autocodelink-index-group' not in html
 
@@ -1281,7 +1281,7 @@ def test_render_grouped_refs_sorts_by_the_renamed_label_not_the_category():
         app=app,
         categories={'a': 'Docstring Examples', 'b': 'Documentation', 'c': 'Sphinx Gallery'},
         show_titles=False,
-        group_mode='always',
+        group=True,
     )
     labels = re.findall(r'<strong>([^<]*)</strong>', html)
     assert labels == ['Alpha', 'Beta', 'Zeta']
@@ -1343,7 +1343,7 @@ def test_render_grouped_refs_sorts_by_explicit_category_order():
         app=app,
         categories={'a': 'Docstring Examples', 'b': 'Sphinx Gallery'},
         show_titles=False,
-        group_mode='always',
+        group=True,
     )
     labels = re.findall(r'<strong>([^<]*)</strong>', html)
     assert labels == ['Sphinx Gallery', 'Docstring Examples']
@@ -1360,7 +1360,7 @@ def test_render_grouped_refs_threads_usage_counts_into_each_group():
         app=app,
         categories={'a': 'Docstring Examples', 'b': 'Docstring Examples', 'c': 'Documentation'},
         show_titles=False,
-        group_mode='always',
+        group=True,
         usage_counts={'a': 1, 'b': 9},
     )
     # 'Docstring Examples' sorts before 'Documentation' alphabetically either way -- the
@@ -2016,7 +2016,7 @@ def test_render_index_entry_excludes_self_reference(tmp_path):
         app=app,
         categories={},
         show_titles=False,
-        group_mode='auto',
+        group=True,
     )
     assert 'pkg.thing' not in result
     assert 'href="other"' in result
@@ -2032,7 +2032,7 @@ def test_render_index_entry_self_reference_only_is_empty(tmp_path):
         app=app,
         categories={},
         show_titles=False,
-        group_mode='auto',
+        group=True,
     )
     assert result == ''
 
@@ -2051,7 +2051,7 @@ def test_render_index_entry_slices_usage_counts_by_target(tmp_path):
         app=app,
         categories={},
         show_titles=False,
-        group_mode='auto',
+        group=True,
         usage_counts=usage_counts,
     )
     assert re.findall(r'href="([ab])"', result) == ['b', 'a']

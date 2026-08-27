@@ -55,16 +55,11 @@ class AutoCodeLink(Directive):
         return [node]
 
 
-def _group_choice(arg: str) -> str:
-    """Validate the ``:group:`` option."""
-    return directives.choice(arg, ('auto', 'always', 'never'))
-
-
 class AutoCodeLinkIndex(Directive):
     """A backreferences index: every linked name and the pages that use it.
 
     Takes an optional documented dotted name to index just that one. Options are
-    ``:label:``, ``:hide-empty:``, ``:group:`` and ``:no-titles:``; see the README.
+    ``:label:``, ``:hide-empty:``, ``:no-group:`` and ``:no-titles:``; see the README.
     Filled in at ``build-finished``, once every page's links are known.
     """
 
@@ -75,7 +70,7 @@ class AutoCodeLinkIndex(Directive):
     option_spec: ClassVar[dict[str, Callable[[str], object]]] = {
         'label': directives.unchanged,
         'hide-empty': directives.flag,
-        'group': _group_choice,
+        'no-group': directives.flag,
         'no-titles': directives.flag,
     }
 
@@ -87,7 +82,7 @@ class AutoCodeLinkIndex(Directive):
         opts = {
             'name': self.arguments[0] if self.arguments else '',
             'hide_empty': 'hide-empty' in self.options,
-            'group': self.options.get('group', 'auto'),
+            'group': 'no-group' not in self.options,
             'titles': 'no-titles' not in self.options,
         }
         raw = (
