@@ -1192,8 +1192,7 @@ def _render_grouped_refs(
     for ref in refs:
         groups.setdefault(categories.get(ref, _UNCATEGORIZED_LABEL), []).append(ref)
 
-    should_group = group_mode == 'always' or (group_mode != 'never' and len(groups) > 1)
-    if not should_group:
+    if group_mode == 'never':
         return _render_ref_list(
             refs,
             docname=docname,

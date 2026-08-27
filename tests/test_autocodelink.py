@@ -1229,6 +1229,38 @@ def test_render_grouped_refs_bolds_the_group_label():
     assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
 
 
+def test_render_grouped_refs_auto_shows_a_single_category_subheading():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_category_labels={}),
+    )
+    html = autolink._render_grouped_refs(
+        ['a', 'b'],
+        docname='index',
+        app=app,
+        categories={'a': 'Docstring Examples', 'b': 'Docstring Examples'},
+        show_titles=False,
+        group_mode='auto',
+    )
+    assert '<p class="sphinx-autocodelink-index-group-label"><strong>Docstring Examples' in html
+
+
+def test_render_grouped_refs_never_shows_no_subheading_even_for_one_category():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_category_labels={}),
+    )
+    html = autolink._render_grouped_refs(
+        ['a', 'b'],
+        docname='index',
+        app=app,
+        categories={'a': 'Docstring Examples', 'b': 'Docstring Examples'},
+        show_titles=False,
+        group_mode='never',
+    )
+    assert 'sphinx-autocodelink-index-group' not in html
+
+
 def test_render_grouped_refs_sorts_by_the_renamed_label_not_the_category():
     # Unrenamed, alphabetical order would be 'Docstring Examples', 'Documentation',
     # 'Sphinx Gallery' -- but renamed to 'Zeta', 'Alpha', 'Beta', the *renamed* order

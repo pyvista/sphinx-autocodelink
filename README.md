@@ -153,9 +153,8 @@ object's own description, `'Documentation'` for everything else. `.. autocodelin
 `record_namespace()` and `AutoCodeLinkScraper` all take a `category` of your own choosing
 instead.
 
-Grouping is adaptive: an entry whose references all share one category renders as a flat list,
-so nothing gets a pointless one-item subheading. `:group: always` and `:group: never` override
-that.
+Grouping shows a subheading for every category present, even just one -- `:group: never` renders
+a flat list instead; `:group: auto` (the default) and `:group: always` are equivalent.
 
 Categories render alphabetically by their displayed label. Rename the labels, reorder the
 groups, or both:
