@@ -12,12 +12,12 @@ Just ``pkg.thing``, grouped by category (default, since 3 categories apply):
 Just ``pkg.thing``, forced flat despite 3 categories applying:
 
 .. autocodelink-index:: pkg.thing
-   :group: never
+   :no-group:
 
 Just ``pkg.thing``, docnames instead of titles:
 
 .. autocodelink-index:: pkg.thing
-   :group: never
+   :no-group:
    :no-titles:
 
 Unused name:
