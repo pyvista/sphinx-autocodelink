@@ -663,8 +663,7 @@ def record_namespace(
     ``state``, the calling directive's own, defaults it to
     :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` inside an object description.
     ``anchor`` is the id of the section holding ``source``, so a "Used In" entry can
-    link straight to it; a later block wins, which favours a numpydoc-ordered
-    ``Examples`` section over an earlier ``Notes`` one.
+    link straight to it. A later block wins.
     """
     if not category and state is not None and is_inside_autodoc_desc(state):
         category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY

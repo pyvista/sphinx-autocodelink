@@ -1577,6 +1577,16 @@ def test_render_ref_list_appends_the_section_anchor():
     assert '<a href="b.html">' in html
 
 
+def test_record_namespace_later_anchor_wins():
+    env = SimpleNamespace(docname='page')
+    for section in ('notes', 'examples'):
+        autolink.record_namespace(
+            env=env, docname='page', source='thing', namespace={'thing': _Widget}, anchor=section
+        )
+    recorded = getattr(env, autolink._ANCHOR_ATTR)['page']
+    assert set(recorded.values()) == {'examples'}
+
+
 def test_enclosing_section_id_finds_the_nearest_section():
     outer = nodes.section(ids=['outer'])
     inner = nodes.section(ids=['examples'])

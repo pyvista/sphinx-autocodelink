@@ -146,7 +146,8 @@ A page is listed only if it actually *uses* the name — a call, or an attribute
 its own link in the code block, but doesn't earn a "Used In" entry.
 
 A page recorded through `autocodelink_doctest_blocks` links straight to the section holding the
-block, so the entry lands on the usage rather than the top of the page. This needs the section
+block, so the entry lands on the usage rather than the top of the page. A page recording
+the same name in more than one section links to the later one. This needs the section
 to be a real, linkable one: numpydoc renders `Examples` as a `.. rubric::` by default, which
 carries no anchor, so the link falls back to the enclosing section — the page itself. Projects
 that turn those rubrics into real headings get the deeper link for free.
