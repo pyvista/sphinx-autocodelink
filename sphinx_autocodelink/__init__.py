@@ -628,8 +628,8 @@ def _resolve_pending_anchors(app: Sphinx, doctree: nodes.document) -> None:
     :func:`record_namespace` takes an ``anchor``, but a directive calling it from inside
     a docstring has none to give: autodoc's content is still a detached subtree when the
     directive runs. Those records are anchored here instead, once the assembled page has
-    real sections. Page-level rather than per-block, so a page whose code spans several
-    sections points every name at the last one.
+    real sections -- and only when the page has one to point at unambiguously, see
+    :func:`_page_code_section_id`.
     """
     env = app.env
     records = getattr(env, _ENV_ATTR, {}).get(env.docname)
