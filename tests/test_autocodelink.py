@@ -1564,6 +1564,35 @@ def test_render_ref_list_sort_alphabetical_shows_no_usage_count():
     assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
 
 
+def test_render_ref_list_appends_the_section_anchor():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='alphabetical'),
+    )
+    html = autolink._render_ref_list(
+        ['a', 'b'], docname='index', app=app, show_titles=False, anchors={'a': 'examples'}
+    )
+    # only 'a' was recorded under a section; 'b' keeps a plain page link
+    assert '<a href="a.html#examples">' in html
+    assert '<a href="b.html">' in html
+
+
+def test_enclosing_section_id_finds_the_nearest_section():
+    outer = nodes.section(ids=['outer'])
+    inner = nodes.section(ids=['examples'])
+    block = nodes.doctest_block()
+    inner += block
+    outer += inner
+    assert autolink._enclosing_section_id(block) == 'examples'
+
+
+def test_enclosing_section_id_without_a_section_is_empty():
+    document = nodes.document(settings=SimpleNamespace(), reporter=SimpleNamespace())
+    block = nodes.doctest_block()
+    document += block
+    assert autolink._enclosing_section_id(block) == ''
+
+
 def test_render_ref_list_sort_alphabetical_shows_usage_count_when_enabled():
     app = SimpleNamespace(
         builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
