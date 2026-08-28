@@ -341,13 +341,21 @@ def test_directive_in_a_docstring_anchors_to_its_section(tmp_path):
     assert 'href="api_sectioned.html#examples"' in refs
 
 
-def test_multi_object_page_gets_no_anchor(tmp_path):
-    # api.rst documents several objects, so a record there could belong to any of their
-    # sections -- it stays a plain page link rather than guessing
+def test_page_with_code_in_several_places_gets_no_anchor(tmp_path):
+    # api.rst has code inside a docstring section and code outside any -- no telling
+    # which a record came from, so it stays a plain page link rather than guessing
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()
     assert '<li><a href="api.html">' in refs
     assert '<li><a href="api.html#' not in refs
+
+
+def test_several_objects_sharing_one_code_section_still_anchors(tmp_path):
+    # api_sectioned.rst documents two objects but only one has code, so the section is
+    # unambiguous -- the object count on its own must not block the anchor
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    assert 'href="api_sectioned.html#examples"' in refs
 
 
 def test_doctest_blocks_off_records_nothing(tmp_path):

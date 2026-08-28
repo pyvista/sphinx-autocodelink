@@ -66,3 +66,8 @@ def sectioned_example() -> int:
 
     """
     return 10
+
+
+def no_examples_here() -> int:
+    """Return a constant, documented without any example code."""
+    return 11
