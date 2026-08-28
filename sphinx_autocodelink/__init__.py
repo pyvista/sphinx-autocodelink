@@ -602,10 +602,11 @@ def _enclosing_section_id(node: nodes.Node) -> str:
 
 
 def _page_code_section_id(doctree: nodes.document) -> str:
-    """Return the id of the section holding the page's last code block.
+    """Return the id of the one section holding every code block on the page.
 
-    Empty for a page whose code sits in its own root section, since an anchor there
-    points at the top of the page -- exactly where a plain page link already lands.
+    Empty unless they all share a section: with code in more than one place there is no
+    telling which a record came from. The page's own root section counts as no section,
+    since an anchor there points where a plain page link already lands.
     """
     root_ids = {
         anchor_id
@@ -613,13 +614,12 @@ def _page_code_section_id(doctree: nodes.document) -> str:
         if isinstance(child, nodes.section)
         for anchor_id in child.get('ids') or ()
     }
-    found = ''
-    for node in doctree.findall():
-        if isinstance(node, (nodes.literal_block, nodes.doctest_block)):
-            section_id = _enclosing_section_id(node)
-            if section_id and section_id not in root_ids:
-                found = section_id
-    return found
+    sections = {
+        '' if (found := _enclosing_section_id(node)) in root_ids else found
+        for node in doctree.findall()
+        if isinstance(node, (nodes.literal_block, nodes.doctest_block))
+    }
+    return sections.pop() if len(sections) == 1 else ''
 
 
 def _resolve_pending_anchors(app: Sphinx, doctree: nodes.document) -> None:
@@ -638,10 +638,6 @@ def _resolve_pending_anchors(app: Sphinx, doctree: nodes.document) -> None:
     all_anchors: dict[str, dict[str, str]] = getattr(env, _ANCHOR_ATTR, None) or {}
     for_doc = all_anchors.setdefault(env.docname, {})
     if not any(name not in for_doc for record in records for name in record.candidates):
-        return
-    # More than one documented object on the page and there is no telling which one's
-    # section a record belongs to, so leave them all pointing at the page.
-    if sum(1 for _ in doctree.findall(addnodes.desc)) > 1:
         return
     anchor = _page_code_section_id(doctree)
     if not anchor:

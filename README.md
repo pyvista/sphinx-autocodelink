@@ -146,10 +146,13 @@ A page is listed only if it actually *uses* the name — a call, or an attribute
 its own link in the code block, but doesn't earn a "Used In" entry.
 
 A "Used In" entry links straight to the section holding the code, so it lands on the usage
-rather than the top of the page. A page recording the same name in more than one section links
-to the later one. A page documenting more than one object keeps a plain page link, since a
-record there could belong to any of their sections. This needs the section
-to be a real, linkable one: numpydoc renders `Examples` as a `.. rubric::` by default, which
+rather than the top of the page. A `>>>` block is recorded with its own section, so a name
+recorded from two of them links to the later one. A directive calling `record_namespace()`
+from inside a docstring has no section to name at the time -- autodoc's content is still a
+detached subtree -- so its anchor is worked out from the finished page instead; if that page's
+code sits in more than one section, there is no telling which a record came from and it keeps
+a plain page link. How many objects the page documents doesn't matter, only where its code
+lives. This needs the section to be a real, linkable one: numpydoc renders `Examples` as a `.. rubric::` by default, which
 carries no anchor, so the link falls back to the enclosing section — the page itself. Projects
 that turn those rubrics into real headings get the deeper link for free.
 
