@@ -4,6 +4,7 @@ Index
 .. toctree::
 
    api
+   api_sectioned
    auto_examples/index
    refs
    doctest_page

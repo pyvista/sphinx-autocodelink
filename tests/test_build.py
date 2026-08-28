@@ -332,6 +332,24 @@ def test_doctest_block_used_in_links_to_its_own_section(tmp_path):
     assert 'href="doctest_page.html#notes"' not in refs
 
 
+def test_directive_in_a_docstring_anchors_to_its_section(tmp_path):
+    # `.. autocodelink::` inside a docstring records through record_namespace(), which
+    # has no section to name at directive-run time -- autodoc's content is still a
+    # detached subtree. The anchor is resolved later, from the assembled page.
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    assert 'href="api_sectioned.html#examples"' in refs
+
+
+def test_multi_object_page_gets_no_anchor(tmp_path):
+    # api.rst documents several objects, so a record there could belong to any of their
+    # sections -- it stays a plain page link rather than guessing
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    assert '<li><a href="api.html">' in refs
+    assert '<li><a href="api.html#' not in refs
+
+
 def test_doctest_blocks_off_records_nothing(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()

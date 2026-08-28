@@ -997,11 +997,16 @@ def test_setup():
         'env-merge-info': [autolink._merge_records],
         'env-purge-doc': [autolink._purge_doc],
         'build-finished': [autolink._embed_links],
-        'doctree-read': [autolink._record_bare_doctest_blocks],
+        'doctree-read': [
+            autolink._record_bare_doctest_blocks,
+            autolink._resolve_pending_anchors,
+        ],
     }
     # runs after other build-finished handlers at Sphinx's default priority (500) -- see
     # setup()'s docstring for why (Sphinx-Gallery's reference_url embedding, notably).
     assert priorities[('build-finished', autolink._embed_links)] == 900
+    # after page-restructuring doctree-read handlers, which run at Sphinx's default 500
+    assert priorities[('doctree-read', autolink._resolve_pending_anchors)] == 900
     assert config_values == {
         'autocodelink_records_dir': (autolink.DEFAULT_RECORDS_DIR, 'html', ()),
         'autocodelink_autodoc_backrefs': (False, 'html', ()),
