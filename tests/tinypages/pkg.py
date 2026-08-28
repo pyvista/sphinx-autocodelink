@@ -46,3 +46,23 @@ class Registry:
 
 #: A module-level registry, for the subscripted-receiver case.
 registry = Registry()
+
+
+def anchored_target() -> int:
+    """Return a constant, used only from a docstring's own ``Examples`` section."""
+    return 9
+
+
+def sectioned_example() -> int:
+    """Return a constant.
+
+    Examples
+    --------
+
+    .. autocodelink::
+
+        import pkg
+        pkg.anchored_target()
+
+    """
+    return 10

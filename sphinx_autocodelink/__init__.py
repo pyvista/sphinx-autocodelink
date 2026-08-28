@@ -601,6 +601,57 @@ def _enclosing_section_id(node: nodes.Node) -> str:
     return ''
 
 
+def _page_code_section_id(doctree: nodes.document) -> str:
+    """Return the id of the section holding the page's last code block.
+
+    Empty for a page whose code sits in its own root section, since an anchor there
+    points at the top of the page -- exactly where a plain page link already lands.
+    """
+    root_ids = {
+        anchor_id
+        for child in doctree.children
+        if isinstance(child, nodes.section)
+        for anchor_id in child.get('ids') or ()
+    }
+    found = ''
+    for node in doctree.findall():
+        if isinstance(node, (nodes.literal_block, nodes.doctest_block)):
+            section_id = _enclosing_section_id(node)
+            if section_id and section_id not in root_ids:
+                found = section_id
+    return found
+
+
+def _resolve_pending_anchors(app: Sphinx, doctree: nodes.document) -> None:
+    """Anchor records made before the page had sections to point at.
+
+    :func:`record_namespace` takes an ``anchor``, but a directive calling it from inside
+    a docstring has none to give: autodoc's content is still a detached subtree when the
+    directive runs. Those records are anchored here instead, once the assembled page has
+    real sections. Page-level rather than per-block, so a page whose code spans several
+    sections points every name at the last one.
+    """
+    env = app.env
+    records = getattr(env, _ENV_ATTR, {}).get(env.docname)
+    if not records:
+        return
+    all_anchors: dict[str, dict[str, str]] = getattr(env, _ANCHOR_ATTR, None) or {}
+    for_doc = all_anchors.setdefault(env.docname, {})
+    if not any(name not in for_doc for record in records for name in record.candidates):
+        return
+    # More than one documented object on the page and there is no telling which one's
+    # section a record belongs to, so leave them all pointing at the page.
+    if sum(1 for _ in doctree.findall(addnodes.desc)) > 1:
+        return
+    anchor = _page_code_section_id(doctree)
+    if not anchor:
+        return
+    for record in records:
+        for name in record.candidates:
+            for_doc.setdefault(name, anchor)
+    setattr(env, _ANCHOR_ATTR, all_anchors)
+
+
 def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
     """Execute and record every bare ``>>>`` doctest block on the page.
 
@@ -1553,6 +1604,8 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.connect('build-finished', _embed_links, priority=900)
     app.connect('builder-inited', _register_autodoc_hook)
     app.connect('doctree-read', _record_bare_doctest_blocks)
+    # after other doctree-read handlers, so page-restructuring transforms have run
+    app.connect('doctree-read', _resolve_pending_anchors, priority=900)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')

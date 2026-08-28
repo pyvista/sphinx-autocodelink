@@ -12,3 +12,5 @@ API
 
 .. autoclass:: pkg.Registry
    :members:
+
+.. autofunction:: pkg.anchored_target
