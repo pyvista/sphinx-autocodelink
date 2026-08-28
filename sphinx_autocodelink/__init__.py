@@ -53,6 +53,9 @@ _INDEX_DOCS_ATTR = 'sphinx_autocodelink_index_docs'
 #: for grouping backreferences by where they came from. Untagged docnames have no entry.
 _CATEGORY_ATTR = 'sphinx_autocodelink_categories'
 
+#: Per docname, the section anchor each documented name was recorded under.
+_ANCHOR_ATTR = 'sphinx_autocodelink_anchors'
+
 #: Display label for a referencing page with no recorded category.
 _UNCATEGORIZED_LABEL = 'Documentation'
 
@@ -588,6 +591,16 @@ def _is_inside_desc_node(node: nodes.Node) -> bool:
     return False
 
 
+def _enclosing_section_id(node: nodes.Node) -> str:
+    """Return the id of the nearest section enclosing ``node``, or ``''``."""
+    parent = node.parent
+    while parent is not None:
+        if isinstance(parent, nodes.section) and parent.get('ids'):
+            return str(parent['ids'][0])
+        parent = parent.parent
+    return ''
+
+
 def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
     """Execute and record every bare ``>>>`` doctest block on the page.
 
@@ -625,7 +638,12 @@ def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
             continue
         category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY if _is_inside_desc_node(block) else ''
         record_namespace(
-            env=env, docname=docname, source=code, namespace=namespace, category=category
+            env=env,
+            docname=docname,
+            source=code,
+            namespace=namespace,
+            category=category,
+            anchor=_enclosing_section_id(block),
         )
 
 
@@ -637,12 +655,15 @@ def record_namespace(
     namespace: dict[str, Any],
     category: str = '',
     state: RSTState | None = None,
+    anchor: str = '',
 ) -> None:
     """Record candidate documented names for every identifier in ``source``.
 
     ``category`` tags this page for grouping in ``.. autocodelink-index::`` output.
     ``state``, the calling directive's own, defaults it to
     :data:`DEFAULT_DOCSTRING_EXAMPLE_CATEGORY` inside an object description.
+    ``anchor`` is the id of the section holding ``source``, so a "Used In" entry can
+    link straight to it. A later block wins.
     """
     if not category and state is not None and is_inside_autodoc_desc(state):
         category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
@@ -651,7 +672,16 @@ def record_namespace(
     if all_records is None:
         all_records = {}
         setattr(env, _ENV_ATTR, all_records)
-    all_records.setdefault(docname, []).extend(_records_for(source, namespace))
+    records = _records_for(source, namespace)
+    all_records.setdefault(docname, []).extend(records)
+
+    if anchor:
+        anchors: dict[str, dict[str, str]] = getattr(env, _ANCHOR_ATTR, None) or {}
+        for_doc = anchors.setdefault(docname, {})
+        for record in records:
+            for name in record.candidates:
+                for_doc[name] = anchor
+        setattr(env, _ANCHOR_ATTR, anchors)
 
     if category:
         categories: dict[str, str] = getattr(env, _CATEGORY_ATTR, None) or {}
@@ -762,6 +792,10 @@ def _merge_records(
     their_index_docs: set[str] = getattr(other, _INDEX_DOCS_ATTR, set())
     setattr(env, _INDEX_DOCS_ATTR, our_index_docs | their_index_docs)
 
+    our_anchors: dict[str, dict[str, str]] = getattr(env, _ANCHOR_ATTR, {})
+    our_anchors.update(getattr(other, _ANCHOR_ATTR, {}))
+    setattr(env, _ANCHOR_ATTR, our_anchors)
+
     our_categories: dict[str, str] = getattr(env, _CATEGORY_ATTR, {})
     their_categories: dict[str, str] = getattr(other, _CATEGORY_ATTR, {})
     our_categories.update(their_categories)
@@ -773,6 +807,7 @@ def _purge_doc(app: Sphinx, env: BuildEnvironment, docname: str) -> None:
     getattr(env, _ENV_ATTR, {}).pop(docname, None)
     getattr(env, _INDEX_DOCS_ATTR, set()).discard(docname)
     getattr(env, _CATEGORY_ATTR, {}).pop(docname, None)
+    getattr(env, _ANCHOR_ATTR, {}).pop(docname, None)
 
 
 # ---------------------------------------------------------------------------
@@ -1000,6 +1035,13 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
         out_file.write_text(combined.sub(_wrap, html), encoding='utf-8')
 
     if index_docs:
+        env_anchors: dict[str, dict[str, str]] = getattr(app.env, _ANCHOR_ATTR, {})
+        anchors = {
+            target: {
+                doc: env_anchors[doc][target] for doc in docs if target in env_anchors.get(doc, {})
+            }
+            for target, docs in backrefs.items()
+        }
         _fill_index_placeholders(
             app,
             index_docs,
@@ -1008,6 +1050,7 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
             external=external,
             categories=categories,
             usage_counts=usage_counts,
+            anchors=anchors,
         )
 
 
@@ -1077,6 +1120,7 @@ def _render_ref_list(
     show_titles: bool,
     categories: dict[str, str] | None = None,
     usage_counts: dict[str, int] | None = None,
+    anchors: dict[str, str] | None = None,
 ) -> str:
     """Render ``<ul>`` link(s) to ``refs``, relative to ``docname``.
 
@@ -1085,6 +1129,7 @@ def _render_ref_list(
     """
     categories = categories or {}
     usage_counts = usage_counts or {}
+    anchors = anchors or {}
     if getattr(app.config, 'autocodelink_gallery_cards', False):
         from sphinx_autocodelink._gallery_cards import render_gallery_carousel
 
@@ -1103,6 +1148,7 @@ def _render_ref_list(
                 show_titles=show_titles,
                 categories=categories,
                 usage_counts=usage_counts,
+                anchors=anchors,
             )
 
     show_counts = getattr(app.config, 'autocodelink_show_usage_count', False)
@@ -1113,6 +1159,8 @@ def _render_ref_list(
         items = []
         for label, ref in entries:
             href = app.builder.get_relative_uri(docname, ref)
+            if anchor := anchors.get(ref):
+                href = f'{href}#{anchor}'
             text = escape(label)
             category = categories.get(ref)
             if category == DEFAULT_DOCSTRING_EXAMPLE_CATEGORY:
@@ -1186,6 +1234,7 @@ def _render_grouped_refs(
     show_titles: bool,
     group: bool,
     usage_counts: dict[str, int] | None = None,
+    anchors: dict[str, str] | None = None,
 ) -> str:
     """Render ``refs`` as one flat list, or grouped by category depending on ``group``."""
     groups: dict[str, list[str]] = {}
@@ -1200,6 +1249,7 @@ def _render_grouped_refs(
             show_titles=show_titles,
             categories=categories,
             usage_counts=usage_counts,
+            anchors=anchors,
         )
 
     category_labels = getattr(app.config, 'autocodelink_category_labels', {})
@@ -1214,6 +1264,7 @@ def _render_grouped_refs(
             show_titles=show_titles,
             categories=categories,
             usage_counts=usage_counts,
+            anchors=anchors,
         )
         parts.append(
             '<div class="sphinx-autocodelink-index-group">'
@@ -1233,6 +1284,7 @@ def _render_index_entry(
     show_titles: bool,
     group: bool,
     usage_counts: dict[str, dict[str, int]] | None = None,
+    anchors: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Render one target name's list of referencing pages, or ``''`` if it has none.
 
@@ -1250,6 +1302,7 @@ def _render_index_entry(
         show_titles=show_titles,
         group=group,
         usage_counts=(usage_counts or {}).get(target),
+        anchors=(anchors or {}).get(target),
     )
 
 
@@ -1266,6 +1319,7 @@ def _render_index_html(
     show_titles: bool = True,
     group: bool = True,
     usage_counts: dict[str, dict[str, int]] | None = None,
+    anchors: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Render one ``.. autocodelink-index::`` placeholder's replacement HTML."""
     if name:
@@ -1278,6 +1332,7 @@ def _render_index_html(
             show_titles=show_titles,
             group=group,
             usage_counts=usage_counts,
+            anchors=anchors,
         )
     else:
         body = _render_full_index(
@@ -1290,6 +1345,7 @@ def _render_index_html(
             show_titles=show_titles,
             group=group,
             usage_counts=usage_counts,
+            anchors=anchors,
         )
 
     if not body:
@@ -1310,6 +1366,7 @@ def _render_full_index(
     show_titles: bool = True,
     group: bool = True,
     usage_counts: dict[str, dict[str, int]] | None = None,
+    anchors: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Render the site-wide index: every resolved name and its referencing pages."""
     usage_counts = usage_counts or {}
@@ -1331,6 +1388,7 @@ def _render_full_index(
             show_titles=show_titles,
             group=group,
             usage_counts=usage_counts.get(target),
+            anchors=(anchors or {}).get(target),
         )
         entries.append(f'<dt>{heading}</dt><dd>{body}</dd>')
     if not entries:
@@ -1363,6 +1421,7 @@ def _fill_index_placeholders(
     external: dict[str, str],
     categories: dict[str, str],
     usage_counts: dict[str, dict[str, int]] | None = None,
+    anchors: dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Replace every ``.. autocodelink-index::`` placeholder with its rendered backreferences."""
 
@@ -1380,6 +1439,7 @@ def _fill_index_placeholders(
             show_titles=opts['titles'],
             group=opts['group'],
             usage_counts=usage_counts,
+            anchors=anchors,
         )
 
     def _render_section(match: re.Match[str], docname: str, removed_ids: set[str]) -> str:

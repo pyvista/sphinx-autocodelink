@@ -6,6 +6,7 @@ Index
    api
    auto_examples/index
    refs
+   doctest_page
 
 .. autocodelink::
 

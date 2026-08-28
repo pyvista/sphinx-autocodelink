@@ -324,6 +324,22 @@ def test_autocodelink_category_order_partial_list_sorts_the_rest_after(tmp_path)
     assert labels == ['Docstring Examples', 'Documentation', 'Sphinx Gallery']
 
 
+def test_doctest_block_used_in_links_to_its_own_section(tmp_path):
+    outdir, _ = _build(tmp_path, confoverrides={'autocodelink_doctest_blocks': True})
+    refs = (outdir / 'refs.html').read_text()
+    # doctest_page uses pkg.thing in both Notes and Examples; the later section wins
+    assert 'href="doctest_page.html#examples"' in refs
+    assert 'href="doctest_page.html#notes"' not in refs
+
+
+def test_doctest_blocks_off_records_nothing(tmp_path):
+    outdir, _ = _build(tmp_path)
+    refs = (outdir / 'refs.html').read_text()
+    # the page still exists (it's in the toctree, hence the nav links) -- it just
+    # contributes no "Used In" entry
+    assert '<li><a href="doctest_page.html' not in refs
+
+
 def test_autodoc_backrefs(tmp_path):
     outdir, _ = _build(tmp_path)
     api = (outdir / 'api.html').read_text()

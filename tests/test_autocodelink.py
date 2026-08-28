@@ -1564,6 +1564,45 @@ def test_render_ref_list_sort_alphabetical_shows_no_usage_count():
     assert html == '<ul class="sphinx-autocodelink-index"><li><a href="a.html">a</a></li></ul>'
 
 
+def test_render_ref_list_appends_the_section_anchor():
+    app = SimpleNamespace(
+        builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
+        config=SimpleNamespace(autocodelink_sort='alphabetical'),
+    )
+    html = autolink._render_ref_list(
+        ['a', 'b'], docname='index', app=app, show_titles=False, anchors={'a': 'examples'}
+    )
+    # only 'a' was recorded under a section; 'b' keeps a plain page link
+    assert '<a href="a.html#examples">' in html
+    assert '<a href="b.html">' in html
+
+
+def test_record_namespace_later_anchor_wins():
+    env = SimpleNamespace(docname='page')
+    for section in ('notes', 'examples'):
+        autolink.record_namespace(
+            env=env, docname='page', source='thing', namespace={'thing': _Widget}, anchor=section
+        )
+    recorded = getattr(env, autolink._ANCHOR_ATTR)['page']
+    assert set(recorded.values()) == {'examples'}
+
+
+def test_enclosing_section_id_finds_the_nearest_section():
+    outer = nodes.section(ids=['outer'])
+    inner = nodes.section(ids=['examples'])
+    block = nodes.doctest_block()
+    inner += block
+    outer += inner
+    assert autolink._enclosing_section_id(block) == 'examples'
+
+
+def test_enclosing_section_id_without_a_section_is_empty():
+    document = nodes.document(settings=SimpleNamespace(), reporter=SimpleNamespace())
+    block = nodes.doctest_block()
+    document += block
+    assert autolink._enclosing_section_id(block) == ''
+
+
 def test_render_ref_list_sort_alphabetical_shows_usage_count_when_enabled():
     app = SimpleNamespace(
         builder=SimpleNamespace(get_relative_uri=lambda _from, to: f'{to}.html'),
