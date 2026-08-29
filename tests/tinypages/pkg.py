@@ -71,3 +71,8 @@ def sectioned_example() -> int:
 def no_examples_here() -> int:
     """Return a constant, documented without any example code."""
     return 11
+
+
+def tag(func):
+    """Return ``func`` unchanged; a documented decorator target."""
+    return func

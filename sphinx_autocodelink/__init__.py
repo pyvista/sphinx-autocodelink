@@ -83,8 +83,17 @@ _LOOSE_NAME_CLASS = 'class="n[a-zA-Z]{0,2}"'
 
 
 def _dotted_span_source(parts: tuple[str, ...]) -> str:
-    """Build a regex source matching how Pygments is likely to render a dotted chain."""
-    return _DOT_SPAN.join(_NAME_SPAN.format(re.escape(part)) for part in parts)
+    """Build a regex source matching how Pygments is likely to render a dotted chain.
+
+    The first part tolerates a leading ``@``: a chain used as a decorator renders it
+    inside the name's own span (``<span class="nd">@pv</span>``), not as a separate
+    token.
+    """
+    spans = (
+        _NAME_SPAN.format(('@?' if i == 0 else '') + re.escape(part))
+        for i, part in enumerate(parts)
+    )
+    return _DOT_SPAN.join(spans)
 
 
 def _name_pattern_source(accessed: str) -> str:

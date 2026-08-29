@@ -25,3 +25,13 @@ Index
        local_ref.thing()
 
    helper()
+
+.. autocodelink::
+
+   import pkg
+
+   @pkg.tag
+   def decorated():
+       return 0
+
+   decorated()

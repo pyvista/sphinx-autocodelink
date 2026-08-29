@@ -684,6 +684,16 @@ class _Widget:
         """Do nothing."""
 
 
+def test_name_pattern_matches_a_decorator_rendering():
+    # a chain used as a decorator renders the leading ``@`` inside the first name's
+    # own span: <span class="nd">@pv</span>
+    pattern = re.compile(autolink._name_pattern_source('pv.thing'))
+    decorator = '<span class="nd">@pv</span><span class="o">.</span><span class="n">thing</span>'
+    plain = '<span class="n">pv</span><span class="o">.</span><span class="n">thing</span>'
+    assert pattern.search(decorator)
+    assert pattern.search(plain)
+
+
 def test_records_for_call_site_counts_as_use():
     records = autolink._records_for('Widget()\n', {'Widget': _Widget})
     (record,) = [r for r in records if r.accessed == 'Widget']
