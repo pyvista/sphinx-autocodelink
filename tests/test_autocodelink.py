@@ -723,6 +723,15 @@ def test_candidate_names_module_data_offers_the_dotted_name_first():
     assert any(c.endswith('_Widget') for c in candidates[1:])
 
 
+def test_candidate_names_class_attribute_keeps_class_precedence():
+    # a deep chain (an enum member) resolves to the class first, dotted name last
+    mod = types.ModuleType('fake')
+    mod.Kind = Enum('Kind', 'A B')
+    candidates = autolink._candidate_names('m.Kind.A', {'m': mod})
+    assert candidates[-1] == 'fake.Kind.A'
+    assert candidates[0].endswith('Kind')
+
+
 def test_candidate_names_instance_head_gets_no_dotted_data_name():
     widget = _Widget()
     candidates = autolink._candidate_names('w.name', {'w': widget})
