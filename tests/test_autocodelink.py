@@ -1091,6 +1091,20 @@ def test_intersphinx_inventory():
     }
 
 
+def test_intersphinx_inventory_item_objects():
+    # Sphinx >= 9.1 inventory items are objects; the tuple interface is deprecated
+    item = SimpleNamespace(uri='https://example.invalid/obj.html')
+    env = SimpleNamespace(
+        intersphinx_cache={},
+        intersphinx_inventory={'py:class': {'external.Obj': item}},
+        intersphinx_named_inventory={},
+    )
+    app = SimpleNamespace(env=env)
+    assert autolink._intersphinx_inventory(app) == {
+        'external.Obj': 'https://example.invalid/obj.html',
+    }
+
+
 def test_aliased_names():
     objects = {
         'pkg.Thing': SimpleNamespace(aliased=False),
