@@ -63,7 +63,8 @@ filterwarnings = [
   # it into, rather than propagating it -- but that's incidental, not something to rely on.
   'ignore:This process .* is multi-threaded, use of fork.*:DeprecationWarning',
   # And jupyter-sphinx 0.5.3's own read of the env.app property Sphinx 8.2 deprecated.
-  'ignore:.sphinx\.environment\.BuildEnvironment\.app. is deprecated:sphinx.deprecation.RemovedInSphinx11Warning',
+  # By message only: the category class doesn't exist on the older Sphinx 3.10 resolves.
+  'ignore:.sphinx\.environment\.BuildEnvironment\.app. is deprecated',
 ]
 testpaths = 'tests'
 
