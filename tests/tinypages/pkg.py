@@ -73,5 +73,15 @@ def no_examples_here() -> int:
     return 11
 
 
+def skipped_target() -> int:
+    """Return a constant, referenced only from the skipped-statements fixture."""
+    return 12
+
+
+def tag(func):
+    """Return ``func`` unchanged; a documented decorator target."""
+    return func
+
+
 #: A module-level singleton, documented as data rather than by its class.
 state = Widget()

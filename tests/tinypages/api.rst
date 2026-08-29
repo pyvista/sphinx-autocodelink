@@ -15,4 +15,8 @@ API
 
 .. autofunction:: pkg.anchored_target
 
+.. autofunction:: pkg.skipped_target
+
+.. autofunction:: pkg.tag
+
 .. autodata:: pkg.state

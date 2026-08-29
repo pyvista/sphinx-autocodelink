@@ -57,6 +57,12 @@ def test_directive_resolves_identifiers_local_to_a_helper_function(tmp_path):
     )
 
 
+def test_decorator_usage_links(tmp_path):
+    _, result = _build(tmp_path)
+    # the leading ``@`` renders inside the name's own span, and the link wraps it
+    assert '<a class="sphinx-autocodelink-a" href="api.html#pkg.tag">' in result
+
+
 def test_module_level_data_links_to_its_own_documented_name(tmp_path):
     # pkg.state is a Widget instance documented via autodata -- the link must go to
     # the data entry itself, not fall back to the Widget class page
@@ -363,6 +369,17 @@ def test_several_objects_sharing_one_code_section_still_anchors(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()
     assert 'href="api_sectioned.html#examples"' in refs
+
+
+def test_skipped_statements_do_not_sink_a_block(tmp_path):
+    # skips.rst runs pkg.thing() through both recording paths, each alongside a
+    # ``# doctest: +SKIP`` statement that would raise if executed -- the block must
+    # still execute, record, and earn its "Used In" entry
+    outdir, _ = _build(tmp_path, confoverrides={'autocodelink_doctest_blocks': True})
+    refs = (outdir / 'refs.html').read_text()
+    assert '<li><a href="skips.html' in refs
+    skips = (outdir / 'skips.html').read_text()
+    assert 'sphinx-autocodelink-a' in skips
 
 
 def test_doctest_blocks_off_records_nothing(tmp_path):

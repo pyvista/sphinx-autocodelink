@@ -684,6 +684,37 @@ class _Widget:
         """Do nothing."""
 
 
+def test_executable_script_omits_skipped_statements():
+    script = autolink.executable_script_from_examples(
+        '>>> a = 1\n>>> explode()  # doctest: +SKIP\n>>> b = 2\n'
+    )
+    assert 'a = 1' in script
+    assert 'b = 2' in script
+    assert 'explode' not in script
+
+
+def test_executable_script_omits_a_skipped_multiline_statement():
+    script = autolink.executable_script_from_examples(
+        '>>> total = sum(\n...     [1, 2]\n... )  # doctest: +SKIP\n>>> a = 1\n'
+    )
+    assert 'sum' not in script
+    assert 'a = 1' in script
+
+
+def test_executable_script_all_skipped_is_empty():
+    assert autolink.executable_script_from_examples('>>> explode()  # doctest: +SKIP\n') == ''
+
+
+def test_name_pattern_matches_a_decorator_rendering():
+    # a chain used as a decorator renders the leading ``@`` inside the first name's
+    # own span: <span class="nd">@pv</span>
+    pattern = re.compile(autolink._name_pattern_source('pv.thing'))
+    decorator = '<span class="nd">@pv</span><span class="o">.</span><span class="n">thing</span>'
+    plain = '<span class="n">pv</span><span class="o">.</span><span class="n">thing</span>'
+    assert pattern.search(decorator)
+    assert pattern.search(plain)
+
+
 def test_candidate_names_module_data_offers_the_dotted_name_first():
     mod = types.ModuleType('fake')
     mod.singleton = _Widget()

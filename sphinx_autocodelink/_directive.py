@@ -14,6 +14,7 @@ from docutils.parsers.rst import directives
 
 from sphinx_autocodelink import _note_index_doc
 from sphinx_autocodelink import exec_with_local_scopes
+from sphinx_autocodelink import executable_script_from_examples
 from sphinx_autocodelink import record_namespace
 
 if TYPE_CHECKING:
@@ -37,10 +38,13 @@ class AutoCodeLink(Directive):
         source = '\n'.join(self.content)
         is_doctest = any(line.strip().startswith('>>>') for line in self.content)
         code = doctest.script_from_examples(source) if is_doctest else source
+        # Execute only what the author marked runnable; a skipped statement's own
+        # identifiers are still recorded, and resolve when the executed part bound them.
+        to_run = executable_script_from_examples(source) if is_doctest else source
 
         env = self.state.document.settings.env
         filename = f'<{env.docname}>'
-        namespace = exec_with_local_scopes(compile(code, filename, 'exec'), {}, filename)
+        namespace = exec_with_local_scopes(compile(to_run, filename, 'exec'), {}, filename)
         record_namespace(
             env=env,
             docname=env.docname,

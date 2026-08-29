@@ -8,6 +8,7 @@ Index
    auto_examples/index
    refs
    doctest_page
+   skips
 
 .. autocodelink::
 
@@ -29,5 +30,11 @@ Index
 .. autocodelink::
 
    import pkg
+
+   @pkg.tag
+   def decorated():
+       return 0
+
+   decorated()
 
    print(pkg.state)
