@@ -333,7 +333,13 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
     if walked_all and inspect.ismodule(head):
         # Module-level data (a singleton, a constant) is documented under its own
         # dotted name, which the instance's class -- often private -- never yields.
-        candidates.insert(0, '.'.join([head.__name__, *remainder]))
+        # A deeper chain (an enum member, a class-attribute instance) keeps class
+        # precedence so its reads pool on the class page; dotted name as fallback.
+        dotted = '.'.join([head.__name__, *remainder])
+        if len(remainder) == 1:
+            candidates.insert(0, dotted)
+        else:
+            candidates.append(dotted)
     return candidates
 
 
