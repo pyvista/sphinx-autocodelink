@@ -18,3 +18,5 @@ API
 .. autofunction:: pkg.skipped_target
 
 .. autofunction:: pkg.tag
+
+.. autodata:: pkg.state

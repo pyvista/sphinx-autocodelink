@@ -63,6 +63,13 @@ def test_decorator_usage_links(tmp_path):
     assert '<a class="sphinx-autocodelink-a" href="api.html#pkg.tag">' in result
 
 
+def test_module_level_data_links_to_its_own_documented_name(tmp_path):
+    # pkg.state is a Widget instance documented via autodata -- the link must go to
+    # the data entry itself, not fall back to the Widget class page
+    _, result = _build(tmp_path)
+    assert '<a class="sphinx-autocodelink-a" href="api.html#pkg.state">' in result
+
+
 def test_sphinx_gallery_scraper_links_survives_joblib_workers(tmp_path):
     # `parallel=2` forces Sphinx-Gallery to hand examples to separate joblib
     # worker processes -- the whole reason records go to disk instead of `env`.

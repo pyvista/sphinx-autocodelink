@@ -81,3 +81,7 @@ def skipped_target() -> int:
 def tag(func):
     """Return ``func`` unchanged; a documented decorator target."""
     return func
+
+
+#: A module-level singleton, documented as data rather than by its class.
+state = Widget()
