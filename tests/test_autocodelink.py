@@ -1022,7 +1022,10 @@ def test_record_jupyter_blocks_survives_cells_that_print():
 
 def test_record_jupyter_blocks_does_not_wait_for_cell_threads():
     # a cell's non-daemon thread must not keep the worker -- and the build -- alive
-    source = 'import re\nimport threading\nimport time\nthreading.Thread(target=time.sleep, args=(30,)).start()'
+    source = (
+        'import re\nimport threading\nimport time\n'
+        'threading.Thread(target=time.sleep, args=(30,)).start()'
+    )
     start = time.monotonic()
     env = _apply_jupyter_transform(_jupyter_cell(source), _jupyter_cell('re.compile("x")'))
     assert time.monotonic() - start < 15
