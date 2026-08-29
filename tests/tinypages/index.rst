@@ -36,3 +36,5 @@ Index
        return 0
 
    decorated()
+
+   print(pkg.state)

@@ -286,11 +286,13 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
     if found is None:
         return []
     obj, remainder = found
+    head = obj
 
     if inspect.ismodule(obj) and not remainder:
         return [obj.__name__]
 
     is_class_attr = False
+    walked_all = True
     method: list[str] = []
     for level in remainder:
         owner = obj
@@ -299,14 +301,17 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
         if isinstance(prop, property):
             obj = owner
             is_class_attr, method = True, [level]
+            walked_all = False
             break
         try:
             obj = getattr(obj, level)
         except Exception:  # noqa: BLE001
+            walked_all = False
             break
         if inspect.ismethod(obj):
             obj = owner
             is_class_attr, method = True, [level]
+            walked_all = False
             break
 
     if inspect.ismodule(obj):
@@ -319,7 +324,12 @@ def _candidate_names(accessed: str, namespace: dict[str, Any]) -> list[str]:
     if inspect.isroutine(obj):
         return list(_module_path_candidates(obj, []))
 
-    return list(_module_path_candidates(obj.__class__, []))
+    candidates = list(_module_path_candidates(obj.__class__, []))
+    if walked_all and inspect.ismodule(head):
+        # Module-level data (a singleton, a constant) is documented under its own
+        # dotted name, which the instance's class -- often private -- never yields.
+        candidates.insert(0, '.'.join([head.__name__, *remainder]))
+    return candidates
 
 
 def _candidates_for_callable(func: Any) -> list[str]:
