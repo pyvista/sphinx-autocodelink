@@ -939,6 +939,116 @@ def test_record_bare_doctest_blocks_each_block_gets_a_fresh_namespace():
     assert records == [autolink._Candidate('shared', ('builtins.int',), counts_as_use=False)]
 
 
+def _jupyter_cell(source, **attributes):
+    """Return a real ``JupyterCellNode`` wrapping ``source``, as the directive builds it."""
+    jupyter_ast = pytest.importorskip('jupyter_sphinx.ast')
+    cell = jupyter_ast.JupyterCellNode(execute=True, **attributes)
+    cell_input = jupyter_ast.CellInputNode(classes=['cell_input'])
+    cell_input += nodes.literal_block(text=source)
+    cell += cell_input
+    return cell
+
+
+def _apply_jupyter_transform(*children, enabled=True):
+    """Run the jupyter-blocks transform on a document of ``children``; return its env."""
+    config = SimpleNamespace(autocodelink_jupyter_blocks=True) if enabled else SimpleNamespace()
+    env = SimpleNamespace(docname='index', config=config)
+    document = nodes.document(
+        settings=SimpleNamespace(env=env, language_code='en'), reporter=SimpleNamespace()
+    )
+    for child in children:
+        document += child
+    autolink._RecordJupyterBlocks(document).apply()
+    return env
+
+
+def test_record_jupyter_blocks_disabled_by_default():
+    env = _apply_jupyter_transform(_jupyter_cell('x = 1'), enabled=False)
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+
+
+def test_record_jupyter_blocks_without_jupyter_sphinx(monkeypatch):
+    monkeypatch.setitem(sys.modules, 'jupyter_sphinx', None)
+    monkeypatch.setitem(sys.modules, 'jupyter_sphinx.ast', None)
+    env = _apply_jupyter_transform()
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+
+
+def test_record_jupyter_blocks_shares_one_namespace_across_cells():
+    env = _apply_jupyter_transform(
+        _jupyter_cell('import re'), _jupyter_cell('pattern = re.compile("x")')
+    )
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
+def test_record_jupyter_blocks_strips_doctest_prompts():
+    env = _apply_jupyter_transform(_jupyter_cell('>>> import re\n>>> re.compile("x")'))
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
+def test_record_jupyter_blocks_kernel_directive_resets_namespace(monkeypatch):
+    # `shared` isn't visible past the kernel restart, so only the first cell records.
+    jupyter_ast = pytest.importorskip('jupyter_sphinx.ast')
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args, **kwargs: None)
+    kernel = jupyter_ast.JupyterKernelNode('', kernel_name='python3', kernel_id='')
+    env = _apply_jupyter_transform(_jupyter_cell('shared = 1'), kernel, _jupyter_cell('shared + 1'))
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert records == [autolink._Candidate('shared', ('builtins.int',), counts_as_use=False)]
+
+
+def test_record_jupyter_blocks_skips_a_non_executed_cell():
+    cell = _jupyter_cell('x = 1')
+    cell['execute'] = False
+    env = _apply_jupyter_transform(cell)
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+
+
+def test_record_jupyter_blocks_skips_an_unparseable_cell(monkeypatch):
+    # An IPython magic isn't Python; the cell is skipped, the rest of the page isn't.
+    warnings = []
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args, **kwargs: warnings.append(args))
+    env = _apply_jupyter_transform(
+        _jupyter_cell('%matplotlib inline'), _jupyter_cell('import re\nre.compile("x")')
+    )
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+    assert len(warnings) == 1
+
+
+def test_record_jupyter_blocks_raising_cell_records_what_ran(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args, **kwargs: warnings.append(args))
+    env = _apply_jupyter_transform(
+        _jupyter_cell('import re'), _jupyter_cell('pattern = re.compile("x")\nboom()')
+    )
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+    assert len(warnings) == 1
+
+
+def test_record_jupyter_blocks_declared_raises_suppresses_the_warning(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args, **kwargs: warnings.append(args))
+    env = _apply_jupyter_transform(
+        _jupyter_cell('import re\nre.compile("x")\nboom()', raises=['NameError'])
+    )
+    assert warnings == []
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
+def test_record_jupyter_blocks_tags_docstring_example_category():
+    desc = addnodes.desc()
+    desc += _jupyter_cell('x = 1')
+    env = _apply_jupyter_transform(desc)
+    assert (
+        getattr(env, autolink._CATEGORY_ATTR)['index']
+        == autolink.DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
+    )
+
+
 def test_record_namespace_to_disk_no_records(tmp_path):
     autolink.record_namespace_to_disk(
         directory=tmp_path, docname='index', source='x = 1', namespace={}
@@ -1031,6 +1141,7 @@ def test_setup():
     priorities = {}
     config_values = {}
     directives = {}
+    transforms = []
 
     class FakeApp:
         def connect(self, event, handler, priority=500):
@@ -1042,6 +1153,9 @@ def test_setup():
 
         def add_directive(self, name, directive):
             directives[name] = directive
+
+        def add_transform(self, transform):
+            transforms.append(transform)
 
     result = autolink.setup(FakeApp())
 
@@ -1067,10 +1181,12 @@ def test_setup():
         'autocodelink_category_labels': ({}, 'html', ()),
         'autocodelink_category_order': ((), 'html', (list, tuple)),
         'autocodelink_doctest_blocks': (False, 'html', ()),
+        'autocodelink_jupyter_blocks': (False, 'html', ()),
         'autocodelink_sort': ('alphabetical', 'html', ()),
         'autocodelink_show_usage_count': (False, 'html', ()),
         'autocodelink_gallery_cards': (False, 'html', ()),
     }
+    assert transforms == [autolink._RecordJupyterBlocks]
     assert directives.keys() == {'autocodelink', 'autocodelink-index'}
     assert result == {'parallel_read_safe': True, 'parallel_write_safe': True}
 

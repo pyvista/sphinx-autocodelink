@@ -30,6 +30,7 @@ except ImportError:  # Python 3.10
 
 from docutils import nodes
 from sphinx import addnodes
+from sphinx.transforms import SphinxTransform
 from sphinx.util import logging as sphinx_logging
 
 if TYPE_CHECKING:
@@ -740,6 +741,78 @@ def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
             category=category,
             anchor=_enclosing_section_id(block),
         )
+
+
+class _RecordJupyterBlocks(SphinxTransform):
+    """Execute and record every ``.. jupyter-execute::`` cell on the page.
+
+    Opt-in via ``autocodelink_jupyter_blocks``. Cells share one namespace per document,
+    reset at each ``.. jupyter-kernel::``, like the kernel they run in.
+    """
+
+    #: Ahead of jupyter-sphinx's executor (400), while ``:hide-code:`` inputs still exist.
+    default_priority = 390
+
+    def apply(self) -> None:
+        """Execute each cell in turn, recording it against the namespace built so far."""
+        if not getattr(self.config, 'autocodelink_jupyter_blocks', False):
+            return
+        try:
+            from jupyter_sphinx.ast import JupyterCellNode
+            from jupyter_sphinx.ast import JupyterKernelNode
+        except ImportError:
+            return
+        env = self.env
+        docname = env.docname
+        filename = f'<{docname}>'
+        namespace: dict[str, Any] = {}
+        index = -1
+        for node in self.document.findall(
+            lambda n: isinstance(n, JupyterCellNode | JupyterKernelNode)
+        ):
+            if isinstance(node, JupyterKernelNode):
+                # A new kernel starts from nothing; so does the mirror namespace.
+                namespace = {}
+                continue
+            if not node.get('execute'):
+                continue  # a jupyter-input/jupyter-output cell never runs
+            index += 1
+            source = node.astext()
+            is_doctest = any(line.strip().startswith('>>>') for line in source.splitlines())
+            code = doctest.script_from_examples(source) if is_doctest else source
+            to_run = executable_script_from_examples(source) if is_doctest else source
+            try:
+                compiled = compile(to_run, filename, 'exec')
+            except SyntaxError as error:
+                _logger.warning(
+                    'autocodelink: skipping jupyter-execute cell %d (could not parse: %s)',
+                    index,
+                    error,
+                    location=node,
+                )
+                continue
+            try:
+                recorded = exec_with_local_scopes(compiled, namespace, filename)
+            except Exception as error:  # noqa: BLE001
+                # Record what ran before the raise; only an undeclared failure warns.
+                if node.get('raises') is None:
+                    _logger.warning(
+                        'autocodelink: jupyter-execute cell %d raised %s: %s',
+                        index,
+                        type(error).__name__,
+                        error,
+                        location=node,
+                    )
+                recorded = namespace
+            category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY if _is_inside_desc_node(node) else ''
+            record_namespace(
+                env=env,
+                docname=docname,
+                source=code,
+                namespace=recorded,
+                category=category,
+                anchor=_enclosing_section_id(node),
+            )
 
 
 def record_namespace(
@@ -1665,11 +1738,13 @@ def setup(app: Sphinx) -> dict[str, bool]:
     app.connect('doctree-read', _record_bare_doctest_blocks)
     # after other doctree-read handlers, so page-restructuring transforms have run
     app.connect('doctree-read', _resolve_pending_anchors, priority=900)
+    app.add_transform(_RecordJupyterBlocks)
     app.add_config_value('autocodelink_records_dir', DEFAULT_RECORDS_DIR, rebuild='html')
     app.add_config_value('autocodelink_autodoc_backrefs', False, rebuild='html')
     app.add_config_value('autocodelink_category_labels', {}, rebuild='html')
     app.add_config_value('autocodelink_category_order', (), rebuild='html', types=(list, tuple))
     app.add_config_value('autocodelink_doctest_blocks', False, rebuild='html')
+    app.add_config_value('autocodelink_jupyter_blocks', False, rebuild='html')
     app.add_config_value('autocodelink_sort', 'alphabetical', rebuild='html')
     app.add_config_value('autocodelink_show_usage_count', False, rebuild='html')
     app.add_config_value('autocodelink_gallery_cards', False, rebuild='html')

@@ -459,6 +459,67 @@ def test_gallery_tracing_survives_joblib_workers(tmp_path):
     assert 'href="../api.html#pkg.Widget.describe"' in example
 
 
+JUPYTERPAGES = Path(__file__).parent / 'jupyterpages'
+
+
+def _build_jupyter(tmp_path, *, confoverrides=None):
+    """Build a fresh copy of the jupyterpages fixture; return the outdir and index.html text."""
+    pytest.importorskip('jupyter_sphinx')
+    srcdir = tmp_path / 'src'
+    shutil.copytree(JUPYTERPAGES, srcdir)
+    shutil.copy(TINYPAGES / 'pkg.py', srcdir / 'pkg.py')
+    outdir = tmp_path / 'out'
+    app = Sphinx(
+        srcdir=str(srcdir),
+        confdir=str(srcdir),
+        outdir=str(outdir),
+        doctreedir=str(tmp_path / 'doctrees'),
+        buildername='html',
+        confoverrides=confoverrides,
+    )
+    app.build()
+    return outdir, (outdir / 'index.html').read_text()
+
+
+def test_jupyter_execute_cells_link(tmp_path):
+    _, index = _build_jupyter(tmp_path)
+    # jupyter-sphinx rendered the cell with its IPython lexer, and the link still landed
+    assert 'highlight-ipython3' in index
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api.html#pkg.thing">'
+        '<span class="n">pkg</span><span class="o">.</span>'
+        '<span class="n">thing</span></a>' in index
+    )
+
+
+def test_jupyter_declared_raises_cell_still_links(tmp_path):
+    # identifiers a raising-by-design cell bound or read before the raise still resolve
+    _, index = _build_jupyter(tmp_path)
+    assert 'href="api.html#pkg.Widget.describe"' in index
+
+
+def test_jupyter_hidden_cell_still_binds_names(tmp_path):
+    # `helper` only resolves because the :hide-code: cell's own code was recorded too
+    _, index = _build_jupyter(tmp_path)
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api.html#pkg.Widget.render">'
+        '<span class="n">helper</span><span class="o">.</span>'
+        '<span class="n">render</span></a>' in index
+    )
+
+
+def test_jupyter_cells_reach_used_in_with_their_section_anchor(tmp_path):
+    outdir, _ = _build_jupyter(tmp_path)
+    api = (outdir / 'api.html').read_text()
+    thing = re.search(r'id="pkg\.thing">.*?</dd>', api, re.DOTALL).group()
+    assert 'href="index.html#cells"' in thing
+
+
+def test_jupyter_blocks_off_records_nothing(tmp_path):
+    _, index = _build_jupyter(tmp_path, confoverrides={'autocodelink_jupyter_blocks': False})
+    assert 'sphinx-autocodelink-a' not in index
+
+
 def test_gallery_tracing_can_be_turned_off(tmp_path):
     # `trace=False` on the scraper is the kill switch: the top-level namespace still
     # records, everything only its own scopes could resolve stops.
