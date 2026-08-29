@@ -684,6 +684,27 @@ class _Widget:
         """Do nothing."""
 
 
+def test_executable_script_omits_skipped_statements():
+    script = autolink.executable_script_from_examples(
+        '>>> a = 1\n>>> explode()  # doctest: +SKIP\n>>> b = 2\n'
+    )
+    assert 'a = 1' in script
+    assert 'b = 2' in script
+    assert 'explode' not in script
+
+
+def test_executable_script_omits_a_skipped_multiline_statement():
+    script = autolink.executable_script_from_examples(
+        '>>> total = sum(\n...     [1, 2]\n... )  # doctest: +SKIP\n>>> a = 1\n'
+    )
+    assert 'sum' not in script
+    assert 'a = 1' in script
+
+
+def test_executable_script_all_skipped_is_empty():
+    assert autolink.executable_script_from_examples('>>> explode()  # doctest: +SKIP\n') == ''
+
+
 def test_records_for_call_site_counts_as_use():
     records = autolink._records_for('Widget()\n', {'Widget': _Widget})
     (record,) = [r for r in records if r.accessed == 'Widget']
