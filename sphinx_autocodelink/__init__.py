@@ -15,9 +15,11 @@ from html import escape
 from html import unescape
 import inspect
 import json
+import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -830,28 +832,37 @@ def _run_jupyter_worker(
     payload = json.dumps({'filename': filename, 'cells': cells})
     with tempfile.TemporaryDirectory(prefix='autocodelink-jupyter-') as tmp:
         output = Path(tmp) / 'records.json'
+        log_path = Path(tmp) / 'output.log'
         argv = [sys.executable, '-m', 'sphinx_autocodelink._jupyter_worker', str(output)]
-        try:
-            proc = subprocess.run(
+        # File-backed stdio: anything the cells spawn can hold a pipe open forever.
+        with log_path.open('w+') as log:
+            proc = subprocess.Popen(
                 argv,
-                input=payload,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=log,
+                stderr=log,
                 text=True,
                 cwd=cwd,
-                timeout=_JUPYTER_WORKER_TIMEOUT,
-                check=False,
+                start_new_session=True,
             )
-        except subprocess.TimeoutExpired:
-            _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
-            return None
-        if proc.returncode != 0 or not output.is_file():
-            _logger.warning(
-                'autocodelink: jupyter-execute worker for %s failed:\n%s%s',
-                filename,
-                proc.stdout,
-                proc.stderr,
-            )
-            return None
+            try:
+                proc.communicate(payload, timeout=_JUPYTER_WORKER_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                if hasattr(os, 'killpg'):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                else:  # pragma: no cover - Windows
+                    proc.kill()
+                proc.wait()
+                _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
+                return None
+            if proc.returncode != 0 or not output.is_file():
+                log.seek(0)
+                _logger.warning(
+                    'autocodelink: jupyter-execute worker for %s failed:\n%s',
+                    filename,
+                    log.read(),
+                )
+                return None
         return json.loads(output.read_text())['cells']
 
 

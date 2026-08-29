@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import doctest
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -51,6 +52,8 @@ def main() -> None:
             result['run_error'] = [type(error).__name__, str(error)]
         result['records'] = [_to_jsonable(r) for r in _records_for(code, recorded)]
     output.write_text(json.dumps({'cells': results}))
+    # Cells may leave non-daemon threads behind; they must not keep this process alive.
+    os._exit(0)
 
 
 if __name__ == '__main__':

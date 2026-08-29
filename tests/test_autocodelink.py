@@ -8,8 +8,11 @@ import dataclasses
 from enum import Enum
 import functools
 import inspect
+import io
+import json
 import re
 import sys
+import time
 import types
 from types import SimpleNamespace
 from typing import Literal
@@ -1015,6 +1018,61 @@ def test_record_jupyter_blocks_survives_cells_that_print():
     )
     records = getattr(env, autolink._ENV_ATTR)['index']
     assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
+def test_record_jupyter_blocks_does_not_wait_for_cell_threads():
+    # a cell's non-daemon thread must not keep the worker -- and the build -- alive
+    source = 'import re\nimport threading\nimport time\nthreading.Thread(target=time.sleep, args=(30,)).start()'
+    start = time.monotonic()
+    env = _apply_jupyter_transform(_jupyter_cell(source), _jupyter_cell('re.compile("x")'))
+    assert time.monotonic() - start < 15
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
+def test_record_jupyter_blocks_kills_a_stuck_worker(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args, **kwargs: warnings.append(args))
+    monkeypatch.setattr(autolink, '_JUPYTER_WORKER_TIMEOUT', 1)
+    env = _apply_jupyter_transform(_jupyter_cell('import time\ntime.sleep(30)'))
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+    assert any('timed out' in args[0] for args in warnings)
+
+
+def test_record_jupyter_blocks_warns_when_the_worker_crashes(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(autolink._logger, 'warning', lambda *args, **kwargs: warnings.append(args))
+    monkeypatch.setattr(autolink.sys, 'executable', '/usr/bin/false')
+    env = _apply_jupyter_transform(_jupyter_cell('x = 1'))
+    assert getattr(env, autolink._ENV_ATTR, None) is None
+    assert any('failed' in args[0] for args in warnings)
+
+
+def test_jupyter_worker_main_covers_every_cell_outcome(monkeypatch, tmp_path):
+    from sphinx_autocodelink import _jupyter_worker
+
+    payload = {
+        'filename': '<t>',
+        'cells': [
+            {'source': 'import re', 'reset': False},
+            {
+                'source': '>>> re.compile("x")  # doctest: +SKIP\n>>> p = re.compile("y")',
+                'reset': False,
+            },
+            {'source': 'fresh = 1', 'reset': True},
+            {'source': 'def broken(:', 'reset': False},
+            {'source': 'boom()', 'reset': False},
+        ],
+    }
+    out = tmp_path / 'records.json'
+    monkeypatch.setattr(_jupyter_worker.sys, 'stdin', io.StringIO(json.dumps(payload)))
+    monkeypatch.setattr(_jupyter_worker.sys, 'argv', ['worker', str(out)])
+    monkeypatch.setattr(_jupyter_worker.os, '_exit', lambda code: None)
+    _jupyter_worker.main()
+    cells = json.loads(out.read_text())['cells']
+    assert [c['parse_error'] is None for c in cells] == [True, True, True, False, True]
+    assert cells[4]['run_error'][0] == 'NameError'
+    assert any(e.get('accessed') == 're.compile' for e in cells[1]['records'])
 
 
 def test_record_jupyter_blocks_skips_a_non_executed_cell():
