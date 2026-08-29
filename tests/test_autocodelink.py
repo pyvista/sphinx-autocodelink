@@ -998,6 +998,16 @@ def test_record_jupyter_blocks_kernel_directive_resets_namespace(monkeypatch):
     assert records == [autolink._Candidate('shared', ('builtins.int',), counts_as_use=False)]
 
 
+def test_record_jupyter_blocks_cannot_mutate_the_build_process():
+    # cells run in a worker subprocess: their side effects stay there, records return
+    env = _apply_jupyter_transform(
+        _jupyter_cell('import sys\nsys.autocodelink_leak = True'), _jupyter_cell('sys.platform')
+    )
+    assert not hasattr(sys, 'autocodelink_leak')
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 'sys.platform' for r in records if isinstance(r, autolink._Candidate))
+
+
 def test_record_jupyter_blocks_skips_a_non_executed_cell():
     cell = _jupyter_cell('x = 1')
     cell['execute'] = False

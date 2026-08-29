@@ -97,7 +97,8 @@ autocodelink_jupyter_blocks = True
 
 Every [jupyter-sphinx](https://jupyter-sphinx.readthedocs.io/) `.. jupyter-execute::` cell is
 executed and linked. The cells already run in a kernel at build time; this runs them a second
-time, in the build process itself, for a namespace to resolve against. A document's cells share
+time, in a subprocess of their own, for a namespace to resolve against -- like the
+kernel, they cannot touch the Sphinx process's state. A document's cells share
 one namespace, reset at each `.. jupyter-kernel::`, just like the kernel they mirror — so a
 `:hide-code:` setup cell still resolves the names later cells use. Doctest-style (`>>>`)
 content runs with the prompts stripped, the way the kernel's own IPython accepts it.

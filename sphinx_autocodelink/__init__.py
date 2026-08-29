@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 from typing import TYPE_CHECKING
 from typing import Any
@@ -754,7 +755,7 @@ class _RecordJupyterBlocks(SphinxTransform):
     default_priority = 390
 
     def apply(self) -> None:
-        """Execute each cell in turn, recording it against the namespace built so far."""
+        """Run the page's cells in a worker process and store the records it returns."""
         if not getattr(self.config, 'autocodelink_jupyter_blocks', False):
             return
         try:
@@ -764,55 +765,87 @@ class _RecordJupyterBlocks(SphinxTransform):
             return
         env = self.env
         docname = env.docname
-        filename = f'<{docname}>'
-        namespace: dict[str, Any] = {}
-        index = -1
+        cells: list[dict[str, Any]] = []
+        cell_nodes: list[nodes.Element] = []
+        reset = False
         for node in self.document.findall(
             lambda n: isinstance(n, JupyterCellNode | JupyterKernelNode)
         ):
             if isinstance(node, JupyterKernelNode):
                 # A new kernel starts from nothing; so does the mirror namespace.
-                namespace = {}
+                reset = True
                 continue
             if not node.get('execute'):
                 continue  # a jupyter-input/jupyter-output cell never runs
-            index += 1
-            source = node.astext()
-            is_doctest = any(line.strip().startswith('>>>') for line in source.splitlines())
-            code = doctest.script_from_examples(source) if is_doctest else source
-            to_run = executable_script_from_examples(source) if is_doctest else source
-            try:
-                compiled = compile(to_run, filename, 'exec')
-            except SyntaxError as error:
+            cells.append({'source': node.astext(), 'reset': reset})
+            cell_nodes.append(node)
+            reset = False
+        if not cells:
+            return
+        doc2path = getattr(env, 'doc2path', None)
+        cwd = Path(doc2path(docname)).parent if doc2path is not None else None
+        results = _run_jupyter_worker(f'<{docname}>', cells, cwd=cwd)
+        if results is None:
+            return
+        for index, (node, result) in enumerate(zip(cell_nodes, results, strict=True)):
+            if result['parse_error'] is not None:
                 _logger.warning(
                     'autocodelink: skipping jupyter-execute cell %d (could not parse: %s)',
                     index,
-                    error,
+                    result['parse_error'],
                     location=node,
                 )
                 continue
-            try:
-                recorded = exec_with_local_scopes(compiled, namespace, filename)
-            except Exception as error:  # noqa: BLE001
-                # Record what ran before the raise; only an undeclared failure warns.
-                if node.get('raises') is None:
-                    _logger.warning(
-                        'autocodelink: jupyter-execute cell %d raised %s: %s',
-                        index,
-                        type(error).__name__,
-                        error,
-                        location=node,
-                    )
-                recorded = namespace
-            category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY if _is_inside_desc_node(node) else ''
-            record_namespace(
-                env=env,
-                docname=docname,
-                source=code,
-                namespace=recorded,
-                category=category,
+            # A raise mid-cell still records what ran; only an undeclared failure warns.
+            if result['run_error'] is not None and node.get('raises') is None:
+                _logger.warning(
+                    'autocodelink: jupyter-execute cell %d raised %s: %s',
+                    index,
+                    *result['run_error'],
+                    location=node,
+                )
+            _store_records(
+                env,
+                docname,
+                [_from_jsonable(entry) for entry in result['records']],
+                category=DEFAULT_DOCSTRING_EXAMPLE_CATEGORY if _is_inside_desc_node(node) else '',
                 anchor=_enclosing_section_id(node),
             )
+
+
+#: Generous per-document budget; a stuck cell must not hang the build forever.
+_JUPYTER_WORKER_TIMEOUT = 600
+
+
+def _run_jupyter_worker(
+    filename: str, cells: list[dict[str, Any]], cwd: Path | None = None
+) -> list[dict[str, Any]] | None:
+    """Execute ``cells`` in a subprocess so they cannot mutate this process.
+
+    ``cwd`` should be the document's source directory: like jupyter-sphinx's own
+    kernel, cells then resolve imports and paths relative to it.
+    """
+    argv = [sys.executable, '-m', 'sphinx_autocodelink._jupyter_worker']
+    payload = json.dumps({'filename': filename, 'cells': cells})
+    try:
+        proc = subprocess.run(
+            argv,
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=_JUPYTER_WORKER_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
+        return None
+    if proc.returncode != 0:
+        _logger.warning(
+            'autocodelink: jupyter-execute worker for %s failed:\n%s', filename, proc.stderr
+        )
+        return None
+    return json.loads(proc.stdout)['cells']
 
 
 def record_namespace(
@@ -835,12 +868,22 @@ def record_namespace(
     """
     if not category and state is not None and is_inside_autodoc_desc(state):
         category = DEFAULT_DOCSTRING_EXAMPLE_CATEGORY
+    _store_records(env, docname, _records_for(source, namespace), category=category, anchor=anchor)
 
+
+def _store_records(
+    env: BuildEnvironment,
+    docname: str,
+    records: list[_Record],
+    *,
+    category: str = '',
+    anchor: str = '',
+) -> None:
+    """Append already-resolved ``records`` to the environment's store."""
     all_records: dict[str, list[_Record]] | None = getattr(env, _ENV_ATTR, None)
     if all_records is None:
         all_records = {}
         setattr(env, _ENV_ATTR, all_records)
-    records = _records_for(source, namespace)
     all_records.setdefault(docname, []).extend(records)
 
     if anchor:
