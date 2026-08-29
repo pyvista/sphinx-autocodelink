@@ -38,6 +38,7 @@ row matches where your code already lives:
 | Sphinx-Gallery examples                | `AutoCodeLinkScraper` (below)             |
 | blocks you mark up yourself            | `.. autocodelink::` (below)               |
 | `>>>` doctest blocks, anywhere         | `autocodelink_doctest_blocks = True`      |
+| jupyter-sphinx `jupyter-execute` cells | `autocodelink_jupyter_blocks = True`      |
 | an extension that already runs code    | `record_namespace()` (below)              |
 
 More than one is fine — they can all be on at once.
@@ -87,6 +88,23 @@ run by then. Each block gets a fresh namespace, so a later block can't see an ea
 variables. A statement marked `# doctest: +SKIP` is not executed — its identifiers still link
 when the rest of the block bound their names. `executable_script_from_examples()` exposes that
 same filtering for your own extension (below).
+
+### jupyter-execute cells
+
+```python
+autocodelink_jupyter_blocks = True
+```
+
+Every [jupyter-sphinx](https://jupyter-sphinx.readthedocs.io/) `.. jupyter-execute::` cell is
+executed and linked. The cells already run in a kernel at build time; this runs them a second
+time, in the build process itself, for a namespace to resolve against. A document's cells share
+one namespace, reset at each `.. jupyter-kernel::`, just like the kernel they mirror — so a
+`:hide-code:` setup cell still resolves the names later cells use. Doctest-style (`>>>`)
+content runs with the prompts stripped, the way the kernel's own IPython accepts it.
+
+A cell that isn't plain Python (an IPython magic, or another kernel language entirely) is
+skipped with a warning. A cell that raises still records what ran before the raise, and warns
+only when it doesn't declare `:raises:`.
 
 ### Your own extension
 
@@ -182,6 +200,7 @@ end, with a build warning naming it.
 | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
 | `autocodelink_autodoc_backrefs`    | `False`                    | Append a hidden-if-empty "Used In" section to every documented object but modules |
 | `autocodelink_doctest_blocks`      | `False`                    | Execute and link every bare `>>>` block site-wide                            |
+| `autocodelink_jupyter_blocks`      | `False`                    | Execute and link every jupyter-sphinx `jupyter-execute` cell                 |
 | `autocodelink_sort`                | `'alphabetical'`           | `'frequency'` ranks each list by how often the page uses the target          |
 | `autocodelink_show_usage_count`    | `False`                    | Show each listed page's own count, e.g. `Tutorial page (3 uses)`             |
 | `autocodelink_gallery_cards`       | `False`                    | Render gallery entries as thumbnail cards instead of a link list             |
