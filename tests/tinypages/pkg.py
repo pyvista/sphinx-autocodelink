@@ -76,3 +76,8 @@ def no_examples_here() -> int:
 def skipped_target() -> int:
     """Return a constant, referenced only from the skipped-statements fixture."""
     return 12
+
+
+def tag(func):
+    """Return ``func`` unchanged; a documented decorator target."""
+    return func
