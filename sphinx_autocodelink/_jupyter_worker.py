@@ -1,27 +1,30 @@
 """Execute ``jupyter-execute`` cell sources in a subprocess and emit records as JSON.
 
-Run as ``python -m sphinx_autocodelink._jupyter_worker`` with a JSON payload on stdin:
-``{"filename": str, "cells": [{"source": str, "reset": bool}, ...]}``. Cells run in
-order in one shared namespace, reset where ``reset`` is set. Writes
+Run as ``python -m sphinx_autocodelink._jupyter_worker OUTPUT_PATH`` with a JSON payload
+on stdin: ``{"filename": str, "cells": [{"source": str, "reset": bool}, ...]}``. Cells
+run in order in one shared namespace, reset where ``reset`` is set. Writes
 ``{"cells": [{"records": [...], "parse_error": str|null, "run_error": [type, msg]|null},
-...]}`` to stdout. Executing here keeps cell code from mutating the Sphinx process.
+...]}`` to ``OUTPUT_PATH`` -- never stdout, which the cells themselves may print to.
+Executing here keeps cell code from mutating the Sphinx process.
 """
 
 from __future__ import annotations
 
 import doctest
 import json
+from pathlib import Path
 import sys
 from typing import Any
 
 
 def main() -> None:
-    """Run the cells from stdin's payload and write their records to stdout."""
+    """Run the cells from stdin's payload and write their records to ``sys.argv[1]``."""
     from sphinx_autocodelink import _records_for
     from sphinx_autocodelink import _to_jsonable
     from sphinx_autocodelink import exec_with_local_scopes
     from sphinx_autocodelink import executable_script_from_examples
 
+    output = Path(sys.argv[1])
     payload = json.load(sys.stdin)
     filename = payload['filename']
     namespace: dict[str, Any] = {}
@@ -47,7 +50,7 @@ def main() -> None:
             # Record what ran before the raise, exactly as in-process execution did.
             result['run_error'] = [type(error).__name__, str(error)]
         result['records'] = [_to_jsonable(r) for r in _records_for(code, recorded)]
-    json.dump({'cells': results}, sys.stdout)
+    output.write_text(json.dumps({'cells': results}))
 
 
 if __name__ == '__main__':

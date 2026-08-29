@@ -1008,6 +1008,15 @@ def test_record_jupyter_blocks_cannot_mutate_the_build_process():
     assert any(r.accessed == 'sys.platform' for r in records if isinstance(r, autolink._Candidate))
 
 
+def test_record_jupyter_blocks_survives_cells_that_print():
+    # cell stdout must not corrupt the worker's record channel
+    env = _apply_jupyter_transform(
+        _jupyter_cell('import re\nprint(\'{"cells": [broken\')'), _jupyter_cell('re.compile("x")')
+    )
+    records = getattr(env, autolink._ENV_ATTR)['index']
+    assert any(r.accessed == 're.compile' for r in records if isinstance(r, autolink._Candidate))
+
+
 def test_record_jupyter_blocks_skips_a_non_executed_cell():
     cell = _jupyter_cell('x = 1')
     cell['execute'] = False

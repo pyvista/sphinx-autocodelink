@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -823,29 +824,35 @@ def _run_jupyter_worker(
     """Execute ``cells`` in a subprocess so they cannot mutate this process.
 
     ``cwd`` should be the document's source directory: like jupyter-sphinx's own
-    kernel, cells then resolve imports and paths relative to it.
+    kernel, cells then resolve imports and paths relative to it. Records come back
+    through a temporary file -- stdout belongs to the cells, which may print.
     """
-    argv = [sys.executable, '-m', 'sphinx_autocodelink._jupyter_worker']
     payload = json.dumps({'filename': filename, 'cells': cells})
-    try:
-        proc = subprocess.run(
-            argv,
-            input=payload,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=_JUPYTER_WORKER_TIMEOUT,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
-        return None
-    if proc.returncode != 0:
-        _logger.warning(
-            'autocodelink: jupyter-execute worker for %s failed:\n%s', filename, proc.stderr
-        )
-        return None
-    return json.loads(proc.stdout)['cells']
+    with tempfile.TemporaryDirectory(prefix='autocodelink-jupyter-') as tmp:
+        output = Path(tmp) / 'records.json'
+        argv = [sys.executable, '-m', 'sphinx_autocodelink._jupyter_worker', str(output)]
+        try:
+            proc = subprocess.run(
+                argv,
+                input=payload,
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+                timeout=_JUPYTER_WORKER_TIMEOUT,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
+            return None
+        if proc.returncode != 0 or not output.is_file():
+            _logger.warning(
+                'autocodelink: jupyter-execute worker for %s failed:\n%s%s',
+                filename,
+                proc.stdout,
+                proc.stderr,
+            )
+            return None
+        return json.loads(output.read_text())['cells']
 
 
 def record_namespace(
