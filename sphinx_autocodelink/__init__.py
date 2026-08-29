@@ -539,6 +539,21 @@ def _records_for(source: str, namespace: dict[str, Any]) -> list[_Record]:
     return records
 
 
+def executable_script_from_examples(source: str) -> str:
+    """Return ``source``'s doctest examples as a script, omitting skipped statements.
+
+    Like :func:`doctest.script_from_examples`, but a statement marked
+    ``# doctest: +SKIP`` is left out entirely -- its author flagged it as not
+    runnable, so executing it anyway can only fail or side-effect. Expected
+    outputs are dropped rather than kept as comments.
+    """
+    return ''.join(
+        example.source
+        for example in doctest.DocTestParser().get_examples(source)
+        if not example.options.get(doctest.SKIP)
+    )
+
+
 def exec_with_local_scopes(
     code: CodeType, namespace: dict[str, Any], filename: str
 ) -> dict[str, Any]:
@@ -663,7 +678,10 @@ def _record_bare_doctest_blocks(app: Sphinx, doctree: nodes.document) -> None:
         source = block.astext()
         try:
             code = doctest.script_from_examples(source)
-            compiled = compile(code, filename, 'exec')
+            # Execute only what the author marked runnable; identifiers in a skipped
+            # statement are still recorded below, and resolve when the executed part
+            # bound their names.
+            compiled = compile(executable_script_from_examples(source), filename, 'exec')
         except SyntaxError as error:
             _logger.warning(
                 'autocodelink: skipping doctest block %d (could not parse: %s)',

@@ -14,3 +14,5 @@ API
    :members:
 
 .. autofunction:: pkg.anchored_target
+
+.. autofunction:: pkg.skipped_target

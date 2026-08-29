@@ -71,3 +71,8 @@ def sectioned_example() -> int:
 def no_examples_here() -> int:
     """Return a constant, documented without any example code."""
     return 11
+
+
+def skipped_target() -> int:
+    """Return a constant, referenced only from the skipped-statements fixture."""
+    return 12
