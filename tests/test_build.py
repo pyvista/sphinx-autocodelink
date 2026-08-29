@@ -364,6 +364,17 @@ def test_several_objects_sharing_one_code_section_still_anchors(tmp_path):
     assert 'href="api_sectioned.html#examples"' in refs
 
 
+def test_skipped_statements_do_not_sink_a_block(tmp_path):
+    # skips.rst runs pkg.thing() through both recording paths, each alongside a
+    # ``# doctest: +SKIP`` statement that would raise if executed -- the block must
+    # still execute, record, and earn its "Used In" entry
+    outdir, _ = _build(tmp_path, confoverrides={'autocodelink_doctest_blocks': True})
+    refs = (outdir / 'refs.html').read_text()
+    assert '<li><a href="skips.html' in refs
+    skips = (outdir / 'skips.html').read_text()
+    assert 'sphinx-autocodelink-a' in skips
+
+
 def test_doctest_blocks_off_records_nothing(tmp_path):
     outdir, _ = _build(tmp_path)
     refs = (outdir / 'refs.html').read_text()

@@ -84,7 +84,9 @@ This one is worth a moment's thought before you switch it on, because it runs co
 marked as runnable, including in docstrings `autodoc` pulls in from your dependencies. A block
 that fails is skipped with a build warning rather than failing the build, but it has already
 run by then. Each block gets a fresh namespace, so a later block can't see an earlier one's
-variables.
+variables. A statement marked `# doctest: +SKIP` is not executed — its identifiers still link
+when the rest of the block bound their names. `executable_script_from_examples()` exposes that
+same filtering for your own extension (below).
 
 ### Your own extension
 

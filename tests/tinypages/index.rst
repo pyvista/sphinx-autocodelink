@@ -8,6 +8,7 @@ Index
    auto_examples/index
    refs
    doctest_page
+   skips
 
 .. autocodelink::
 
