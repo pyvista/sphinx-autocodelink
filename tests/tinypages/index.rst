@@ -25,3 +25,9 @@ Index
        local_ref.thing()
 
    helper()
+
+.. autocodelink::
+
+   import pkg
+
+   print(pkg.state)

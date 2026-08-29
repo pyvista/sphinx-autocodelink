@@ -684,6 +684,20 @@ class _Widget:
         """Do nothing."""
 
 
+def test_candidate_names_module_data_offers_the_dotted_name_first():
+    mod = types.ModuleType('fake')
+    mod.singleton = _Widget()
+    candidates = autolink._candidate_names('m.singleton', {'m': mod})
+    assert candidates[0] == 'fake.singleton'
+    assert any(c.endswith('_Widget') for c in candidates[1:])
+
+
+def test_candidate_names_instance_head_gets_no_dotted_data_name():
+    widget = _Widget()
+    candidates = autolink._candidate_names('w.name', {'w': widget})
+    assert not any('w.name' in c for c in candidates)
+
+
 def test_records_for_call_site_counts_as_use():
     records = autolink._records_for('Widget()\n', {'Widget': _Widget})
     (record,) = [r for r in records if r.accessed == 'Widget']
