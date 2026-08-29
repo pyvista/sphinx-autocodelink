@@ -934,7 +934,8 @@ def _intersphinx_inventory(app: Sphinx) -> dict[str, str]:
     urls: dict[str, str] = {}
     for by_objtype in InventoryAdapter(app.env).main_inventory.values():
         for name, item in by_objtype.items():
-            urls.setdefault(name, item[2])
+            # Sphinx >= 9.1 deprecates the tuple interface; Sphinx 7 has only tuples.
+            urls.setdefault(name, item.uri if hasattr(item, 'uri') else item[2])
     return urls
 
 
