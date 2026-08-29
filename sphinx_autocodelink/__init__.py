@@ -82,6 +82,11 @@ _CALL_END = r'<span class="p">\(?\)</span>'
 _LOOSE_NAME_CLASS = 'class="n[a-zA-Z]{0,2}"'
 
 
+#: Joins chain segments; tolerates a foreign anchor (e.g. Sphinx-Gallery's own
+#: backref link) closing between the head and the rest of the chain.
+_CHAIN_SEP = '(?:</a>)?' + _DOT_SPAN
+
+
 def _dotted_span_source(parts: tuple[str, ...]) -> str:
     """Build a regex source matching how Pygments is likely to render a dotted chain.
 
@@ -93,7 +98,7 @@ def _dotted_span_source(parts: tuple[str, ...]) -> str:
         _NAME_SPAN.format(('@?' if i == 0 else '') + re.escape(part))
         for i, part in enumerate(parts)
     )
-    return _DOT_SPAN.join(spans)
+    return _CHAIN_SEP.join(spans)
 
 
 def _name_pattern_source(accessed: str) -> str:
@@ -1102,8 +1107,22 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
                 prefix = match.string[match.start() : wrap_start]
                 wrapped = match.string[wrap_start:wrap_end]
                 return f'{prefix}<a class="sphinx-autocodelink-a" href="{link}">{wrapped}</a>'
-            if any(start <= match.start() < end for start, end in already_linked):
-                return match.group(0)
+            intersecting = [
+                (start, end)
+                for start, end in already_linked
+                if start < match.end() and end > match.start()
+            ]
+            if intersecting:
+                # Another extension's anchor claimed the head of this chain (e.g.
+                # Sphinx-Gallery's own backref linking). Anchors can't nest, but an
+                # anchor-free tail can still carry our link, the same way a call
+                # chain's trailing attributes do.
+                tail_start = max(end for _, end in intersecting)
+                tail = match.string[tail_start : match.end()]
+                if tail_start >= match.end() or not tail.startswith(_DOT_SPAN) or '<a' in tail:
+                    return match.group(0)
+                head = match.string[match.start() : tail_start]
+                return f'{head}<a class="sphinx-autocodelink-a" href="{link}">{tail}</a>'
             return f'<a class="sphinx-autocodelink-a" href="{link}">{match.group(0)}</a>'
 
         out_file.write_text(combined.sub(_wrap, html), encoding='utf-8')

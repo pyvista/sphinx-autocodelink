@@ -2043,6 +2043,38 @@ def test_embed_links_name_dedup(tmp_path):
     assert result.count('href="api#pkg.mesh"') == 1
 
 
+def test_embed_links_wraps_the_tail_after_a_foreign_anchor(tmp_path):
+    # Sphinx-Gallery's own backref link claims the chain's head; the enum-member tail
+    # still gets our link, mirroring how a call chain's trailing attributes are wrapped.
+    html = (
+        '<pre><a href="https://docs.python.org/3/library/enum.html#enum.IntEnum" '
+        'class="sphx-glr-backref-module-enum">'
+        '<span class="n">pv</span><span class="o">.</span><span class="n">Color</span></a>'
+        '<span class="o">.</span><span class="n">RED</span></pre>'
+    )
+    out_file = tmp_path / 'index.html'
+    out_file.write_text(html)
+
+    env = _fake_env()
+    env.domains['py'].objects['pkg.Color'] = SimpleNamespace(
+        docname='api', node_id='pkg.Color', aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': [autolink._Candidate('pv.Color.RED', ('pkg.Color',))]},
+    )
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+    result = out_file.read_text()
+
+    assert (
+        '</a><a class="sphinx-autocodelink-a" href="api#pkg.Color">'
+        '<span class="o">.</span><span class="n">RED</span></a>' in result
+    )
+    assert re.search(r'<a\b[^>]*><a\b', result) is None
+
+
 def test_embed_links_name_already_linked(tmp_path):
     html = (
         '<pre><a class="other-extension-a" href="somewhere"><span class="n">mesh</span></a></pre>'
