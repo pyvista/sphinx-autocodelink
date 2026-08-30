@@ -1184,6 +1184,36 @@ def test_load_disk_records_missing_directory(tmp_path):
     assert autolink._load_disk_records(tmp_path / 'does-not-exist') == ({}, {})
 
 
+def test_capture_records_replay_through_extra(tmp_path):
+    def make_thing() -> _RecordNamespaceReturnType:
+        return _RecordNamespaceReturnType()
+
+    captured = autolink.capture_records(
+        source='make_thing().method', namespace={'make_thing': make_thing}
+    )
+    assert captured == json.loads(json.dumps(captured))  # plain JSON data
+
+    autolink.record_namespace_to_disk(
+        directory=tmp_path, docname='index', source='', namespace={}, extra=captured
+    )
+    loaded, _ = autolink._load_disk_records(tmp_path)
+    call_candidates = [r for r in loaded['index'] if isinstance(r, autolink._CallCandidate)]
+    assert call_candidates == [
+        autolink._CallCandidate(
+            'make_thing', ('method',), ('test_autocodelink._RecordNamespaceReturnType.method',)
+        )
+    ]
+
+
+def test_record_namespace_to_disk_extra_record_objects(tmp_path):
+    record = autolink._Candidate('x', ('builtins.int',), counts_as_use=True)
+    autolink.record_namespace_to_disk(
+        directory=tmp_path, docname='index', source='', namespace={}, extra=[record]
+    )
+    loaded, _ = autolink._load_disk_records(tmp_path)
+    assert loaded['index'] == [record]
+
+
 def test_clear_disk_records_disabled():
     app = SimpleNamespace(config=SimpleNamespace(), srcdir='/nonexistent')
     assert autolink._clear_disk_records(app) is None

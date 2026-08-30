@@ -925,14 +925,16 @@ def record_namespace_to_disk(
     source: str,
     namespace: dict[str, Any],
     category: str = '',
-    extra: Sequence[_Record] = (),
+    extra: Sequence[_Record | dict[str, Any]] = (),
 ) -> None:
     """Like :func:`record_namespace`, but appended to a file under ``directory``.
 
     For a process Sphinx's own ``env-merge-info`` never sees. ``extra`` records are
-    appended as-is, having been resolved elsewhere.
+    appended as-is, having been resolved elsewhere -- as record objects or the
+    dicts :func:`capture_records` returns.
     """
-    records = [*_records_for(source, namespace), *(extra or ())]
+    extras = [_from_jsonable(e) if isinstance(e, dict) else e for e in extra or ()]
+    records = [*_records_for(source, namespace), *extras]
     if not records:
         return
     target = Path(directory) / f'{docname}.json'
@@ -942,6 +944,16 @@ def record_namespace_to_disk(
     if category:
         existing['category'] = category
     target.write_text(json.dumps(existing))
+
+
+def capture_records(*, source: str, namespace: dict[str, Any]) -> list[dict[str, Any]]:
+    """Resolve ``source``'s records against ``namespace`` as JSON-able dicts.
+
+    For a caller that persists records itself -- because the namespace is gone by
+    the time they are recorded -- and replays them later through
+    :func:`record_namespace_to_disk`'s ``extra``, which accepts this form.
+    """
+    return [_to_jsonable(record) for record in _records_for(source, namespace)]
 
 
 def _to_jsonable(record: _Record) -> dict[str, Any]:
