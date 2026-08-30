@@ -15,11 +15,14 @@ from html import escape
 from html import unescape
 import inspect
 import json
+import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -823,29 +826,44 @@ def _run_jupyter_worker(
     """Execute ``cells`` in a subprocess so they cannot mutate this process.
 
     ``cwd`` should be the document's source directory: like jupyter-sphinx's own
-    kernel, cells then resolve imports and paths relative to it.
+    kernel, cells then resolve imports and paths relative to it. Records come back
+    through a temporary file -- stdout belongs to the cells, which may print.
     """
-    argv = [sys.executable, '-m', 'sphinx_autocodelink._jupyter_worker']
     payload = json.dumps({'filename': filename, 'cells': cells})
-    try:
-        proc = subprocess.run(
-            argv,
-            input=payload,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=_JUPYTER_WORKER_TIMEOUT,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
-        return None
-    if proc.returncode != 0:
-        _logger.warning(
-            'autocodelink: jupyter-execute worker for %s failed:\n%s', filename, proc.stderr
-        )
-        return None
-    return json.loads(proc.stdout)['cells']
+    with tempfile.TemporaryDirectory(prefix='autocodelink-jupyter-') as tmp:
+        output = Path(tmp) / 'records.json'
+        log_path = Path(tmp) / 'output.log'
+        argv = [sys.executable, '-m', 'sphinx_autocodelink._jupyter_worker', str(output)]
+        # File-backed stdio: anything the cells spawn can hold a pipe open forever.
+        with log_path.open('w+') as log:
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=log,
+                stderr=log,
+                text=True,
+                cwd=cwd,
+                start_new_session=True,
+            )
+            try:
+                proc.communicate(payload, timeout=_JUPYTER_WORKER_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                if hasattr(os, 'killpg'):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                else:  # pragma: no cover - Windows
+                    proc.kill()
+                proc.wait()
+                _logger.warning('autocodelink: jupyter-execute worker for %s timed out', filename)
+                return None
+            if proc.returncode != 0 or not output.is_file():
+                log.seek(0)
+                _logger.warning(
+                    'autocodelink: jupyter-execute worker for %s failed:\n%s',
+                    filename,
+                    log.read(),
+                )
+                return None
+        return json.loads(output.read_text())['cells']
 
 
 def record_namespace(
