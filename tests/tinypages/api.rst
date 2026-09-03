@@ -20,3 +20,5 @@ API
 .. autofunction:: pkg.tag
 
 .. autodata:: pkg.state
+
+.. autofunction:: pkg.carded

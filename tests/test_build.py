@@ -70,6 +70,19 @@ def test_module_level_data_links_to_its_own_documented_name(tmp_path):
     assert '<a class="sphinx-autocodelink-a" href="api.html#pkg.state">' in result
 
 
+def test_code_inside_a_stretched_link_card_stays_unlinked(tmp_path):
+    # cards.rst makes the same call inside a card with a :link: and inside a plain card.
+    outdir, _ = _build(tmp_path)
+    cards = (outdir / 'cards.html').read_text()
+    linked_card, _, plain_card = cards.partition('sd-stretched-link')
+    assert 'sphinx-autocodelink-a' not in linked_card
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api.html#pkg.carded">'
+        '<span class="n">pkg</span><span class="o">.</span>'
+        '<span class="n">carded</span></a>' in plain_card
+    )
+
+
 def test_sphinx_gallery_scraper_links_survives_joblib_workers(tmp_path):
     # `parallel=2` forces Sphinx-Gallery to hand examples to separate joblib
     # worker processes -- the whole reason records go to disk instead of `env`.
