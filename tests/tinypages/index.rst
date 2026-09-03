@@ -9,6 +9,7 @@ Index
    refs
    doctest_page
    skips
+   cards
 
 .. autocodelink::
 

@@ -2139,6 +2139,88 @@ def test_embed_links_call_chain_dedup(tmp_path):
     assert re.search(r'<a\b[^>]*><a\b', result) is None
 
 
+def test_stretched_link_regions_tolerates_loose_markup():
+    # A void <img> never closes, a stray </p> matches nothing, the link sits inside a
+    # footer wrapper, and a :click-parent: button outside any card claims nothing.
+    html = (
+        '<a class="sd-btn sd-stretched-link" href="x">button</a>'
+        '<div class="sd-card"><img src="y"><div class="sd-card-footer">'
+        '<a class="sd-stretched-link" href="z"></a></div></p></div>'
+        '<pre></pre>'
+    )
+    card_start = html.index('<div class="sd-card">')
+    card_end = html.index('<pre>')
+    assert autolink._stretched_link_regions(html) == [(card_start, card_end)]
+
+
+def test_embed_links_skips_a_name_inside_a_stretched_link_card(tmp_path):
+    # A sphinx-design card with a :link: ends in a stretched link whose overlay covers the
+    # whole card, so a link inside it would be underlined but unreachable.
+    card = (
+        '<div class="sd-card sd-sphinx-override"><div class="sd-card-body">\n'
+        '<div class="highlight"><pre><span class="n">mesh</span></pre></div>\n'
+        '</div><a class="sd-stretched-link reference internal" href="api.html">'
+        '<span class="std std-ref">API</span></a></div>'
+    )
+    html = f'{card}\n<pre><span class="n">mesh</span></pre>'
+    out_file = tmp_path / 'index.html'
+    out_file.write_text(html)
+
+    env = _fake_env()
+    env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(
+        docname='api', node_id='pkg.mesh', aliased=False
+    )
+    setattr(env, autolink._ENV_ATTR, {'index': [autolink._Candidate('mesh', ('pkg.mesh',))]})
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+    assert out_file.read_text() == (
+        f'{card}\n<pre><a class="sphinx-autocodelink-a" href="api#pkg.mesh">'
+        '<span class="n">mesh</span></a></pre>'
+    )
+
+
+def test_embed_links_links_a_name_inside_a_plain_card(tmp_path):
+    html = (
+        '<div class="sd-card"><div class="sd-card-body">'
+        '<pre><span class="n">mesh</span></pre></div></div>'
+    )
+    out_file = tmp_path / 'index.html'
+    out_file.write_text(html)
+
+    env = _fake_env()
+    env.domains['py'].objects['pkg.mesh'] = SimpleNamespace(
+        docname='api', node_id='pkg.mesh', aliased=False
+    )
+    setattr(env, autolink._ENV_ATTR, {'index': [autolink._Candidate('mesh', ('pkg.mesh',))]})
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+    assert '<a class="sphinx-autocodelink-a" href="api#pkg.mesh">' in out_file.read_text()
+
+
+def test_embed_links_skips_a_call_chain_inside_a_stretched_link_card(tmp_path):
+    html = (
+        '<div class="sd-card"><pre><span class="n">pv</span><span class="o">.</span>'
+        '<span class="n">Sphere</span><span class="p">()</span>'
+        '<span class="o">.</span><span class="n">plot</span><span class="p">()</span></pre>'
+        '<a class="sd-stretched-link" href="api.html"></a></div>'
+    )
+    out_file = tmp_path / 'index.html'
+    out_file.write_text(html)
+
+    env = _fake_env()
+    env.domains['py'].objects['pyvista.PolyData.plot'] = SimpleNamespace(
+        docname='api', node_id='pyvista.PolyData.plot', aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': [autolink._CallCandidate('pv.Sphere', ('plot',), ('pyvista.PolyData.plot',))]},
+    )
+    app = _fake_app(env, tmp_path)
+    autolink._embed_links(app, None)
+    assert out_file.read_text() == html
+
+
 def test_embed_links_call_chain_already_linked(tmp_path):
     # Sphere()...plot already wrapped in one anchor, e.g. by another extension --
     # unlike our own wrap, the `)` stays adjacent to `.plot`, so the pattern still

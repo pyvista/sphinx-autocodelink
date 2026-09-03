@@ -242,6 +242,8 @@ link — but Sphinx-Gallery's own, less precise link wins where both apply. Pref
 `intersphinx_mapping`, which this reads already and which covers every page, not just gallery
 ones.
 
+Code inside a sphinx-design card with a `:link:` option is skipped the same way.
+
 ## Development
 
 ```bash

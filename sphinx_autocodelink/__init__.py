@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import doctest
 from html import escape
 from html import unescape
+from html.parser import HTMLParser
 import inspect
 import json
 import os
@@ -66,6 +67,70 @@ _UNCATEGORIZED_LABEL = 'Documentation'
 
 #: Matches any anchor tag, ours or another extension's.
 _ANCHOR_RE = re.compile(r'<a\b[^>]*>.*?</a>', re.DOTALL)
+
+#: Class sphinx-design gives the link that makes a whole card its click target.
+_STRETCHED_LINK_CLASS = 'sd-stretched-link'
+
+#: Class of the card element such a link stretches over.
+_CARD_CLASS = 'sd-card'
+
+
+class _StretchedLinkCards(HTMLParser):
+    """Collect the span of every ``sd-card`` element a stretched link covers."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.regions: list[tuple[int, int]] = []
+        self._data = ''
+        self._line_starts: list[int] = []
+        #: Open elements as ``(tag, start offset, is a card)``.
+        self._stack: list[tuple[str, int, bool]] = []
+        #: Stack depths of the cards a stretched link has claimed.
+        self._covered: set[int] = set()
+
+    def feed(self, data: str) -> None:
+        """Parse ``data`` whole, collecting covered card spans in :attr:`regions`."""
+        self._data = data
+        self._line_starts = [0] + [m.end() for m in re.finditer('\n', data)]
+        super().feed(data)
+
+    def _offset(self) -> int:
+        """Return the character offset of the construct being handled."""
+        line, column = self.getpos()
+        return self._line_starts[line - 1] + column
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Push the element; a stretched link claims its nearest enclosing card."""
+        classes = (dict(attrs).get('class') or '').split()
+        if tag == 'a' and _STRETCHED_LINK_CLASS in classes:
+            for depth in range(len(self._stack) - 1, -1, -1):
+                if self._stack[depth][2]:
+                    self._covered.add(depth)
+                    break
+        self._stack.append((tag, self._offset(), _CARD_CLASS in classes))
+
+    def handle_endtag(self, tag: str) -> None:
+        """Pop through the matching element, recording any claimed card's span."""
+        depths = [depth for depth, frame in enumerate(self._stack) if frame[0] == tag]
+        if not depths:
+            return
+        end = self._data.index('>', self._offset()) + 1
+        for depth in range(len(self._stack) - 1, depths[-1] - 1, -1):
+            start = self._stack.pop()[1]
+            if depth in self._covered:
+                self._covered.remove(depth)
+                self.regions.append((start, end))
+
+
+def _stretched_link_regions(html: str) -> list[tuple[int, int]]:
+    """Return the span of every sphinx-design card whose stretched link covers it whole."""
+    if _STRETCHED_LINK_CLASS not in html:
+        return []
+    parser = _StretchedLinkCards()
+    parser.feed(html)
+    parser.close()
+    return parser.regions
+
 
 #: Markup a real ``:class:``/``:func:`` cross-reference renders with.
 _XREF_OPEN = '<code class="xref py py-obj docutils literal notranslate">'
@@ -1240,8 +1305,10 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
 
         html = out_file.read_text(encoding='utf-8')
 
-        # Skip matches already inside an anchor (ours or another extension's).
+        # Skip matches already inside an anchor (ours or another extension's), or inside
+        # a card whose stretched link is the whole card's click target.
         already_linked = [m.span() for m in _ANCHOR_RE.finditer(html)]
+        already_linked.extend(_stretched_link_regions(html))
 
         def _wrap(
             match: re.Match[str],

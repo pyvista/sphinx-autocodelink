@@ -85,3 +85,8 @@ def tag(func):
 
 #: A module-level singleton, documented as data rather than by its class.
 state = Widget()
+
+
+def carded() -> int:
+    """Return a constant, referenced only from inside sphinx-design cards."""
+    return 13
