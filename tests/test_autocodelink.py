@@ -2593,14 +2593,43 @@ def test_candidates_for_a_method_with_no_name():
     assert autolink._candidates_for_callable(types.MethodType(_NamelessCallable(), _Owner())) == []
 
 
+_TRAILING = '<span class="o">.</span><span class="n">render</span>'
+
+
+def _expr_match(html):
+    receiver, trailing = autolink._expr_pattern_source("reg['a'].render")
+    return re.search(f'{receiver}(?P<w>{trailing})', html)
+
+
 def test_expr_pattern_source_matches_only_the_trailing_attribute():
-    pattern = autolink._expr_pattern_source("reg['a'].render")
     html = (
-        '<span class="n">reg</span><span class="p">[</span><span class="s1">&#39;a&#39;</span>'
-        '<span class="p">]</span><span class="o">.</span><span class="n">render</span>'
+        '<span class="n">reg</span><span class="p">[</span><span class="s1">\'a\'</span>'
+        '<span class="p">]</span>' + _TRAILING
     )
-    match = re.search(pattern, html.replace('&#39;', "'"))
-    assert match.group() == '<span class="o">.</span><span class="n">render</span>'
+    assert _expr_match(html).group('w') == _TRAILING
+
+
+def test_expr_pattern_source_tolerates_a_foreign_anchor_on_the_receiver():
+    html = (
+        '<a href="x"><span class="n">reg</span></a><span class="p">[</span>'
+        '<span class="s1">\'a\'</span><span class="p">]</span>' + _TRAILING
+    )
+    assert _expr_match(html).group('w') == _TRAILING
+
+
+def test_merge_split_spans_restores_pygments_grouping():
+    html = (
+        '<div class="highlight"><span class="s1">\'</span><span class="s1">a</span>'
+        '<span class="s1">\'</span></div>'
+    )
+    assert autolink._merge_split_spans(html) == (
+        '<div class="highlight"><span class="s1">\'a\'</span></div>'
+    )
+
+
+def test_merge_split_spans_leaves_content_outside_a_code_block_alone():
+    html = '<p><span class="pre">a</span><span class="pre">b</span></p>'
+    assert autolink._merge_split_spans(html) == html
 
 
 def test_expr_pattern_source_of_something_with_no_trailing_attribute():

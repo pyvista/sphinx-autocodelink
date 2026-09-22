@@ -19,6 +19,8 @@ Install it:
 
 ```bash
 pip install sphinx-autocodelink
+# with Sphinx-Gallery support:
+pip install 'sphinx-autocodelink[gallery]'
 ```
 
 Add it to `conf.py`:
@@ -247,7 +249,7 @@ Code inside a sphinx-design card with a `:link:` option is skipped the same way.
 ## Development
 
 ```bash
-uv sync --group dev
+uv sync --group dev --extra gallery
 uv run pytest
 uv run pre-commit run --all-files
 ```
