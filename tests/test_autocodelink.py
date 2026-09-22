@@ -2048,6 +2048,53 @@ def test_embed_links_call_chain(tmp_path):
     assert re.search(r'<a\b[^>]*><a\b', result) is None
 
 
+def _expr_env(tmp_path, html):
+    """Build an app whose records hold one ``reg['a'].render`` expression candidate."""
+    (tmp_path / 'index.html').write_text(html)
+    env = _fake_env()
+    env.domains['py'].objects['pkg.Widget.render'] = SimpleNamespace(
+        docname='api', node_id='pkg.Widget.render', aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': [autolink._ExprCandidate("reg['a'].render", ('pkg.Widget.render',))]},
+    )
+    return _fake_app(env, tmp_path)
+
+
+def test_embed_links_expression_wraps_only_the_trailing_attribute(tmp_path):
+    html = (
+        '<pre><span class="n">reg</span><span class="p">[</span><span class="s1">\'a\'</span>'
+        '<span class="p">]</span><span class="o">.</span><span class="n">render</span></pre>'
+    )
+    autolink._embed_links(_expr_env(tmp_path, html), None)
+    result = (tmp_path / 'index.html').read_text()
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api#pkg.Widget.render">'
+        '<span class="o">.</span><span class="n">render</span></a>' in result
+    )
+    assert '<span class="n">reg</span></a>' not in result
+
+
+def test_embed_links_expression_under_a_foreign_anchor_and_split_spans(tmp_path):
+    # Sphinx-Gallery 0.22: its own anchor on the receiver, one span per token.
+    html = (
+        '<div class="highlight"><pre><a href="other"><span class="n">reg</span></a>'
+        '<span class="p">[</span><span class="s1">\'</span><span class="s1">a</span>'
+        '<span class="s1">\'</span><span class="p">]</span>'
+        '<span class="o">.</span><span class="n">render</span></pre></div>'
+    )
+    autolink._embed_links(_expr_env(tmp_path, html), None)
+    result = (tmp_path / 'index.html').read_text()
+    assert '<a href="other"><span class="n">reg</span></a>' in result
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api#pkg.Widget.render">'
+        '<span class="o">.</span><span class="n">render</span></a>' in result
+    )
+    assert re.search(r'<a\b[^>]*><a\b', result) is None
+
+
 def test_embed_links_merges_disk_records(tmp_path):
     html = '<pre><span class="n">mesh</span></pre>'
     out_file = tmp_path / 'index.html'
@@ -2593,14 +2640,43 @@ def test_candidates_for_a_method_with_no_name():
     assert autolink._candidates_for_callable(types.MethodType(_NamelessCallable(), _Owner())) == []
 
 
+_TRAILING = '<span class="o">.</span><span class="n">render</span>'
+
+
+def _expr_match(html):
+    receiver, trailing = autolink._expr_pattern_source("reg['a'].render")
+    return re.search(f'{receiver}(?P<w>{trailing})', html)
+
+
 def test_expr_pattern_source_matches_only_the_trailing_attribute():
-    pattern = autolink._expr_pattern_source("reg['a'].render")
     html = (
-        '<span class="n">reg</span><span class="p">[</span><span class="s1">&#39;a&#39;</span>'
-        '<span class="p">]</span><span class="o">.</span><span class="n">render</span>'
+        '<span class="n">reg</span><span class="p">[</span><span class="s1">\'a\'</span>'
+        '<span class="p">]</span>' + _TRAILING
     )
-    match = re.search(pattern, html.replace('&#39;', "'"))
-    assert match.group() == '<span class="o">.</span><span class="n">render</span>'
+    assert _expr_match(html).group('w') == _TRAILING
+
+
+def test_expr_pattern_source_tolerates_a_foreign_anchor_on_the_receiver():
+    html = (
+        '<a href="x"><span class="n">reg</span></a><span class="p">[</span>'
+        '<span class="s1">\'a\'</span><span class="p">]</span>' + _TRAILING
+    )
+    assert _expr_match(html).group('w') == _TRAILING
+
+
+def test_merge_split_spans_restores_pygments_grouping():
+    html = (
+        '<div class="highlight"><span class="s1">\'</span><span class="s1">a</span>'
+        '<span class="s1">\'</span></div>'
+    )
+    assert autolink._merge_split_spans(html) == (
+        '<div class="highlight"><span class="s1">\'a\'</span></div>'
+    )
+
+
+def test_merge_split_spans_leaves_content_outside_a_code_block_alone():
+    html = '<p><span class="pre">a</span><span class="pre">b</span></p>'
+    assert autolink._merge_split_spans(html) == html
 
 
 def test_expr_pattern_source_of_something_with_no_trailing_attribute():

@@ -193,11 +193,48 @@ def _highlight_fragment(expr: str) -> str | None:
     return None if '\n' in fragment else fragment
 
 
-def _expr_pattern_source(expr: str) -> str | None:
-    """Build a regex source matching just ``expr``'s trailing ``.attribute``.
+#: Two neighbouring Pygments spans sharing a class, which Sphinx-Gallery 0.22 emits
+#: where Pygments' own formatter writes one. Merging them changes nothing on the page.
+_SPLIT_SPAN_RE = re.compile(r'(<span class="([a-zA-Z0-9]+)">[^<]*)</span><span class="\2">')
+_HIGHLIGHT_RE = re.compile(r'<div class="highlight">.*?</div>', re.DOTALL)
 
-    The receiver goes in a fixed-width lookbehind -- hence escaped strictly, where only
-    the trailing attribute is loosened -- leaving its own names free to be linked.
+
+def _merge_split_spans(html: str) -> str:
+    """Restore Pygments' span grouping inside every highlighted block on the page."""
+
+    def _merge(block: re.Match[str]) -> str:
+        source = block.group()
+        while (merged := _SPLIT_SPAN_RE.sub(r'\1', source)) != source:
+            source = merged
+        return source
+
+    return _HIGHLIGHT_RE.sub(_merge, html)
+
+
+#: One Pygments span, for rebuilding an escaped fragment span by span.
+_SPAN_RE = re.compile(r'<span class="([a-zA-Z0-9]+)">([^<]*)</span>')
+
+
+def _anchor_tolerant_source(fragment: str) -> str:
+    """Escape ``fragment``, letting a foreign anchor wrap any of its name spans."""
+    parts: list[str] = []
+    position = 0
+    for span in _SPAN_RE.finditer(fragment):
+        parts.append(re.escape(fragment[position : span.start()]))
+        escaped = re.escape(span.group())
+        if span.group(1).startswith('n'):
+            escaped = f'(?:<a\\b[^>]*>)?{escaped}(?:</a>)?'
+        parts.append(escaped)
+        position = span.end()
+    parts.append(re.escape(fragment[position:]))
+    return ''.join(parts)
+
+
+def _expr_pattern_source(expr: str) -> tuple[str, str] | None:
+    """Split ``expr``'s highlighted fragment into its receiver and trailing attribute.
+
+    The receiver is matched rather than held in a lookbehind, so another extension's
+    anchor around one of its names still leaves the trailing attribute linkable.
     """
     fragment = _highlight_fragment(expr)
     if fragment is None:
@@ -206,7 +243,10 @@ def _expr_pattern_source(expr: str) -> str | None:
     if index <= 0:
         return None
     prefix, trailing = fragment[:index], fragment[index:]
-    return f'(?<={re.escape(prefix)}){_NAME_CLASS_RE.sub(_LOOSE_NAME_CLASS, re.escape(trailing))}'
+    return (
+        _anchor_tolerant_source(prefix),
+        _NAME_CLASS_RE.sub(_LOOSE_NAME_CLASS, re.escape(trailing)),
+    )
 
 
 @dataclass(frozen=True)
@@ -1289,21 +1329,22 @@ def _embed_links(app: Sphinx, exception: Exception | None) -> None:
             sources.append(
                 f'(?P<n{i}>{_CALL_END}(?P<w{i}>{_DOT_SPAN}{_dotted_span_source(trailing)}))'
             )
-        # An expression's own pattern matches only its trailing attribute, its receiver
-        # held in a lookbehind -- so a name inside that receiver still gets its own link.
+        # An expression wraps only its trailing attribute, same as a call chain, so a
+        # name inside its receiver keeps whichever link it resolved on its own.
         for expr in sorted(resolved_exprs, key=len, reverse=True):
-            pattern = _expr_pattern_source(expr)
-            if pattern is None:
+            built = _expr_pattern_source(expr)
+            if built is None:
                 continue
+            receiver, trailing = built
             i = len(sources)
-            group_kind[i] = 'name'
+            group_kind[i] = 'call'
             group_link[i] = resolved_exprs[expr]
-            sources.append(f'(?P<n{i}>{pattern})')
+            sources.append(f'(?P<n{i}>{receiver}(?P<w{i}>{trailing}))')
         if not sources:
             continue
         combined = re.compile('|'.join(sources))
 
-        html = out_file.read_text(encoding='utf-8')
+        html = _merge_split_spans(out_file.read_text(encoding='utf-8'))
 
         # Skip matches already inside an anchor (ours or another extension's), or inside
         # a card whose stretched link is the whole card's click target.

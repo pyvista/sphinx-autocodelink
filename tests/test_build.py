@@ -445,10 +445,8 @@ def test_gallery_resolves_a_receiver_no_dotted_name_addresses(tmp_path):
     # link its own name resolves to.
     outdir, _ = _build(tmp_path)
     example = (outdir / 'auto_examples' / 'plot_scopes.html').read_text()
-    assert (
-        '<a class="sphinx-autocodelink-a" href="../api.html#pkg.Registry">'
-        '<span class="n">registry</span></a><span class="p">[</span>' in example
-    )
+    # `registry` keeps whichever link its own name resolved to, Sphinx-Gallery's included.
+    assert 'href="../api.html#pkg.Registry"' in example
     assert (
         '<a class="sphinx-autocodelink-a" href="../api.html#pkg.Widget.describe">'
         '<span class="o">.</span><span class="n">describe</span></a>' in example
