@@ -2048,6 +2048,53 @@ def test_embed_links_call_chain(tmp_path):
     assert re.search(r'<a\b[^>]*><a\b', result) is None
 
 
+def _expr_env(tmp_path, html):
+    """Build an app whose records hold one ``reg['a'].render`` expression candidate."""
+    (tmp_path / 'index.html').write_text(html)
+    env = _fake_env()
+    env.domains['py'].objects['pkg.Widget.render'] = SimpleNamespace(
+        docname='api', node_id='pkg.Widget.render', aliased=False
+    )
+    setattr(
+        env,
+        autolink._ENV_ATTR,
+        {'index': [autolink._ExprCandidate("reg['a'].render", ('pkg.Widget.render',))]},
+    )
+    return _fake_app(env, tmp_path)
+
+
+def test_embed_links_expression_wraps_only_the_trailing_attribute(tmp_path):
+    html = (
+        '<pre><span class="n">reg</span><span class="p">[</span><span class="s1">\'a\'</span>'
+        '<span class="p">]</span><span class="o">.</span><span class="n">render</span></pre>'
+    )
+    autolink._embed_links(_expr_env(tmp_path, html), None)
+    result = (tmp_path / 'index.html').read_text()
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api#pkg.Widget.render">'
+        '<span class="o">.</span><span class="n">render</span></a>' in result
+    )
+    assert '<span class="n">reg</span></a>' not in result
+
+
+def test_embed_links_expression_under_a_foreign_anchor_and_split_spans(tmp_path):
+    # Sphinx-Gallery 0.22: its own anchor on the receiver, one span per token.
+    html = (
+        '<div class="highlight"><pre><a href="other"><span class="n">reg</span></a>'
+        '<span class="p">[</span><span class="s1">\'</span><span class="s1">a</span>'
+        '<span class="s1">\'</span><span class="p">]</span>'
+        '<span class="o">.</span><span class="n">render</span></pre></div>'
+    )
+    autolink._embed_links(_expr_env(tmp_path, html), None)
+    result = (tmp_path / 'index.html').read_text()
+    assert '<a href="other"><span class="n">reg</span></a>' in result
+    assert (
+        '<a class="sphinx-autocodelink-a" href="api#pkg.Widget.render">'
+        '<span class="o">.</span><span class="n">render</span></a>' in result
+    )
+    assert re.search(r'<a\b[^>]*><a\b', result) is None
+
+
 def test_embed_links_merges_disk_records(tmp_path):
     html = '<pre><span class="n">mesh</span></pre>'
     out_file = tmp_path / 'index.html'
