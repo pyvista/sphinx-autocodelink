@@ -506,7 +506,7 @@ def _resolve_object(accessed: str, namespace: dict[str, Any]) -> Any | None:
     for level in remainder:
         try:
             obj = getattr(obj, level)
-        except Exception:  # noqa: BLE001, PERF203 -- arbitrary objects can raise anything
+        except Exception:  # noqa: BLE001 -- arbitrary objects can raise anything
             return None
     return obj
 
